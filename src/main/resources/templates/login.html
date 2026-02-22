@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en" xmlns:sec="http://www.w3.org/1999/xhtml">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport"
+          content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Document</title>
+
+</head>
+<body>
+
+<div sec:suthorize="isAnonymous()">
+    마이페이지를 보려면 로그인을 해야합니다.
+</div>
+
+<h4>로그인페이지</h4>
+
+<div th:if="${param.error}">
+    <h4>아이디나 비번 틀림</h4>
+</div>
+
+<form action="/login" method="POST">
+    <input name = "username">
+    <input name = "password" type="password">
+    <button type="submit">전송</button>
+</form>
+</body>
+</html>
