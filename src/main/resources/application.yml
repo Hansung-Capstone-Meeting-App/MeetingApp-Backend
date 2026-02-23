@@ -1,0 +1,32 @@
+spring:
+  application:
+    name: demo
+
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+  datasource:
+    url: jdbc:mysql://capston2.mysql.database.azure.com/hive
+    username: hansungcapston26
+    password: 1q2w3e4r@
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+  jpa:
+    properties:
+      hibernate:
+        show_sql: true
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+
+cloud:
+  aws:
+    s3:
+      bucket: hansung-capstone-2026
+    region:
+      static: ap-northeast-2
+    credentials:
+      access-key: ${AWS_ACCESS_KEY_ID}
+      secret-key: ${AWS_SECRET_ACCESS_KEY}
