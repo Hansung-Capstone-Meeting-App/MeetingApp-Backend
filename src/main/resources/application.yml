@@ -30,3 +30,13 @@ cloud:
     credentials:
       access-key: ${AWS_ACCESS_KEY_ID}
       secret-key: ${AWS_SECRET_ACCESS_KEY}
+
+
+ai:
+  assemblyai:
+    api-key: "866b7f8f225f49c389f99517815ce547"
+    base-url: https://api.assemblyai.com
+  gemini:
+    api-key: "AIzaSyAXWoNuc1aUrxHEULdrJnh2bEvcVDmSVLc"
+    base-url: https://generativelanguage.googleapis.com
+    model: gemini-2.5-flash
