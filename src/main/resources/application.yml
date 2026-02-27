@@ -8,9 +8,9 @@ spring:
       max-request-size: 100MB
 
   datasource:
-    url: jdbc:mysql://capston2.mysql.database.azure.com/hive
-    username: hansungcapston26
-    password: 1q2w3e4r@
+    url: ${DATASOURCE_URL}
+    username: ${DATASOURCE_USERNAME}
+    password: ${DATASOURCE_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
   jpa:
@@ -30,3 +30,8 @@ cloud:
     credentials:
       access-key: ${AWS_ACCESS_KEY_ID}
       secret-key: ${AWS_SECRET_ACCESS_KEY}
+
+jwt:
+  secret: ${JWT_SECRET}
+  access-token-expiration: 3600000
+  refresh-token-expiration: 604800000
