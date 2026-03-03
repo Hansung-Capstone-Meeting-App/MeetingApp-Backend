@@ -36,20 +36,13 @@ public class SecurityConfig {
         // 요청 권한 설정
         http.authorizeHttpRequests((authorize) ->
                 authorize
-                        .requestMatchers("/**").permitAll() // 공개 엔드포인트
-                        .anyRequest().authenticated() // 나머지는 인증 필요, SecurityContext에 인증 정보가 있으면 통과
-        );
-        /*
-        http.authorizeHttpRequests((authorize) ->
-                authorize
                         .requestMatchers("/user", "/login", "/refresh", "/logout", "/register", "/presigned-url",
                                 "/v3/api-docs/**",
                                 "/swagger-ui/**",
-                                "/swagger-ui.html",
                                 "/swagger-resources/**",
                                 "/webjars/**").permitAll() // 공개 엔드포인트
                         .anyRequest().authenticated() // 나머지는 인증 필요, SecurityContext에 인증 정보가 있으면 통과
-        );*/
+        );
 
         // JWT 필터 추가
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
