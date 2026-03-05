@@ -7,8 +7,13 @@ import org.springframework.web.bind.annotation.ResponseBody;
 @Controller
 public class TestController {
     @GetMapping("/")
-    @ResponseBody
     String hello(){
-        return "테스트";
+        return "main.html";
+    }
+
+    @GetMapping("/test")
+    @ResponseBody
+    String test(){
+        return "JWT 통과 성공";
     }
 }

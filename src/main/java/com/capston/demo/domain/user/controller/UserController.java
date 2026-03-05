@@ -1,46 +1,48 @@
 package com.capston.demo.domain.user.controller;
 
-import com.capston.demo.domain.user.entity.User;
-import com.capston.demo.domain.user.repository.UserRepository;
+import com.capston.demo.domain.user.dto.request.RegisterRequestDto;
+import com.capston.demo.domain.user.dto.response.RegisterResponseDto;
+import com.capston.demo.domain.user.service.S3Service;
+import com.capston.demo.domain.user.service.UserService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.ResponseBody;
+import org.springframework.web.bind.annotation.*;
 
 
 @Controller
 @RequiredArgsConstructor
 public class UserController {
 
-    private final UserRepository userRepository;
-    private final PasswordEncoder passwordEncoder;
+    private final UserService userService;
+    private final S3Service s3Service;
 
     @GetMapping("/register")
     String register() {
         return "register.html";
     }
 
-    @PostMapping("/user")
+    @PostMapping("/user") // 회원가입 정보
     @ResponseBody
-    String adduser(
-            String email,
-            String password,
-            String displayName) {
-        User user = new User();
-        var hash = passwordEncoder.encode(password); // 비밀번호는 해싱해서 저장
-        user.setEmail(email);
-        user.setPassword(hash);
-        user.setName(displayName);
-        userRepository.save(user);
-
-        return "회원가입 완료";
+    public ResponseEntity<RegisterResponseDto> adduser(@Valid @RequestBody RegisterRequestDto requestDto) {
+        RegisterResponseDto response = userService.registerUser(requestDto);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
     @GetMapping("/login")
     public String login() {
         return "login.html";
+    }
+
+    // PresignedUrl 발급받기
+    @GetMapping("/presigned-url")
+    @ResponseBody
+    String getURL(@RequestParam String filename) { // 쿼리 스트링 받기
+        var result = s3Service.createPresignedUrl("profileImg/" + filename); // PresignedUrl 발급
+
+        return result; // 발급 받은 PresignedUrl을 html에 반환
     }
 
 

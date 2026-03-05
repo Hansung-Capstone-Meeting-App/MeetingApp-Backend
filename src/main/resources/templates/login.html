@@ -1,29 +1,67 @@
 <!doctype html>
-<html lang="en" xmlns:sec="http://www.w3.org/1999/xhtml">
+<html lang="ko">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport"
           content="width=device-width, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
     <meta http-equiv="X-UA-Compatible" content="ie=edge">
-    <title>Document</title>
-
+    <title>로그인</title>
 </head>
 <body>
 
-<div sec:suthorize="isAnonymous()">
-    마이페이지를 보려면 로그인을 해야합니다.
-</div>
-
 <h4>로그인페이지</h4>
 
-<div th:if="${param.error}">
-    <h4>아이디나 비번 틀림</h4>
-</div>
+<div id="error-message" style="color: red; display: none;"></div>
 
-<form action="/login" method="POST">
-    <input name = "username">
-    <input name = "password" type="password">
-    <button type="submit">전송</button>
+<form id="login-form">
+    <input id="email" type="email" placeholder="이메일" required>
+    <input id="password" type="password" placeholder="비밀번호" required>
+    <button type="submit">로그인</button>
 </form>
+
+<script>
+    document.getElementById('login-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const email = document.getElementById('email').value;
+        const password = document.getElementById('password').value;
+        const errorDiv = document.getElementById('error-message');
+
+        try {
+            const response = await fetch('/login', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ email, password })
+            });
+
+            if (response.ok) {
+                const data = await response.json();
+                // Access Token과 Refresh Token을 localStorage에 저장
+                localStorage.setItem('accessToken', data.accessToken);
+                localStorage.setItem('refreshToken', data.refreshToken);
+
+                alert('로그인 성공!');
+
+                fetch('/', { // jwt토큰 정상확인
+                    headers: {
+                        Authorization: 'Bearer ' + localStorage.getItem('accessToken')
+                    }
+                })
+                .then(res => console.log(res.status))
+
+            } else {
+                const error = await response.json();
+                errorDiv.textContent = error.message || '로그인 실패';
+                errorDiv.style.display = 'block';
+            }
+        } catch (error) {
+            errorDiv.textContent = '서버 오류가 발생했습니다';
+            errorDiv.style.display = 'block';
+        }
+    });
+</script>
+
 </body>
 </html>

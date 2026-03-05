@@ -1,5 +1,6 @@
 package com.capston.demo.domain.meeting.controller;
 
+import com.capston.demo.domain.meeting.controllerDocs.MeetingControllerDocs;
 import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
@@ -17,31 +18,35 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/meetings")
 @RequiredArgsConstructor
-public class MeetingController {
+public class MeetingController implements MeetingControllerDocs {
 
     private final MeetingService meetingService;
     private final MeetingTranscriptService transcriptService;
 
     // ── 회의 ──────────────────────────────────────────────────────────────────
 
+    // 회의 시작 (application/json, { workspaceId, channelId, title, ... })
     // POST /api/meetings
     @PostMapping
     public ResponseEntity<MeetingResponse> startMeeting(@RequestBody MeetingRequest request) {
         return ResponseEntity.ok(meetingService.startMeeting(request));
     }
 
+    // 회의 종료 (endedAt 기록)
     // PATCH /api/meetings/{id}/end
     @PatchMapping("/{id}/end")
     public ResponseEntity<MeetingResponse> endMeeting(@PathVariable Long id) {
         return ResponseEntity.ok(meetingService.endMeeting(id));
     }
 
+    // 회의 단건 조회
     // GET /api/meetings/{id}
     @GetMapping("/{id}")
     public ResponseEntity<MeetingResponse> getMeeting(@PathVariable Long id) {
         return ResponseEntity.ok(meetingService.getMeeting(id));
     }
 
+    // 회의 목록 조회 (workspaceId, channelId 중 하나 이상 필터 가능)
     // GET /api/meetings?workspaceId=1&channelId=2
     @GetMapping
     public ResponseEntity<List<MeetingResponse>> getMeetings(
@@ -50,6 +55,7 @@ public class MeetingController {
         return ResponseEntity.ok(meetingService.getMeetings(workspaceId, channelId));
     }
 
+    // 회의 삭제
     // DELETE /api/meetings/{id}
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteMeeting(@PathVariable Long id) {
@@ -59,6 +65,7 @@ public class MeetingController {
 
     // ── 트랜스크립트 ───────────────────────────────────────────────────────────
 
+    // STT 결과(트랜스크립트) 저장
     // POST /api/meetings/{meetingId}/transcript
     @PostMapping("/{meetingId}/transcript")
     public ResponseEntity<TranscriptResponse> saveTranscript(
@@ -67,6 +74,7 @@ public class MeetingController {
         return ResponseEntity.ok(transcriptService.saveTranscript(meetingId, request));
     }
 
+    // 트랜스크립트 조회
     // GET /api/meetings/{meetingId}/transcript
     @GetMapping("/{meetingId}/transcript")
     public ResponseEntity<TranscriptResponse> getTranscript(@PathVariable Long meetingId) {
@@ -75,6 +83,7 @@ public class MeetingController {
 
     // ── 화자 매핑 ─────────────────────────────────────────────────────────────
 
+    // 화자 레이블을 실제 참여자로 매핑 (저장/덮어쓰기)
     // PUT /api/meetings/transcripts/{transcriptId}/speaker-mappings
     @PutMapping("/transcripts/{transcriptId}/speaker-mappings")
     public ResponseEntity<List<SpeakerMappingResponse>> saveSpeakerMappings(
@@ -83,6 +92,7 @@ public class MeetingController {
         return ResponseEntity.ok(transcriptService.saveSpeakerMappings(transcriptId, request));
     }
 
+    // 화자 매핑 목록 조회
     // GET /api/meetings/transcripts/{transcriptId}/speaker-mappings
     @GetMapping("/transcripts/{transcriptId}/speaker-mappings")
     public ResponseEntity<List<SpeakerMappingResponse>> getSpeakerMappings(@PathVariable Long transcriptId) {
