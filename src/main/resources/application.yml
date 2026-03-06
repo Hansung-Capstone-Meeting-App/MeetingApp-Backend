@@ -34,9 +34,11 @@ cloud:
 
 ai:
   assemblyai:
-    api-key: "866b7f8f225f49c389f99517815ce547"
+    api-key: ${ASSEMBLYAI_API_KEY}
     base-url: https://api.assemblyai.com
   gemini:
-    api-key: "AIzaSyAXWoNuc1aUrxHEULdrJnh2bEvcVDmSVLc"
+    api-key: ${GEMINI_API_KEY}
     base-url: https://generativelanguage.googleapis.com
     model: gemini-2.5-flash
+
+
