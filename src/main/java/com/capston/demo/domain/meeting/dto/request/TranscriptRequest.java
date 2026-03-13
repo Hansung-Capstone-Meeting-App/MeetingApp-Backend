@@ -19,7 +19,7 @@ public class TranscriptRequest {
     /** meeting_transcripts.full_text - STT 변환된 전체 텍스트 */
     private String fullText;
 
-    /** meeting_transcripts.summary - Claude API로 생성한 회의 요약 */
+    /** meeting_transcripts.summary - Gemini API로 생성한 회의 요약 */
     private String summary;
 
     /** meeting_transcripts.keywords - 핵심 키워드 JSON 배열 예) ["예산", "마감일"] */

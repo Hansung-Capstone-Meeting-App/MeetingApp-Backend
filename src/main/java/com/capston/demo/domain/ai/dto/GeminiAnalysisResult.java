@@ -4,7 +4,7 @@ import lombok.Getter;
 import java.util.List;
 
 @Getter @AllArgsConstructor
-public class ClaudeAnalysisResult {
+public class GeminiAnalysisResult {
     private final String summary;
     private final List<String> keywords;
     private final List<ExtractedTask> tasks;

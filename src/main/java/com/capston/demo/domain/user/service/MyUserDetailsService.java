@@ -29,6 +29,6 @@ public class MyUserDetailsService implements UserDetailsService {
         List<GrantedAuthority> auth = new ArrayList<>();
         auth.add(new SimpleGrantedAuthority("일반유저"));
 
-        return new User(user.getName(), user.getPassword(), auth);
+        return new User(user.getEmail(), user.getPassword(), auth);
     }
 }
