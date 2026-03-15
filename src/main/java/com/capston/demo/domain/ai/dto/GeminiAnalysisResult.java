@@ -4,7 +4,7 @@ import lombok.Getter;
 import java.util.List;
 
 @Getter @AllArgsConstructor
-public class ClaudeAnalysisResult {
+public class GeminiAnalysisResult {
     private final String summary;
     private final List<String> keywords;
     private final List<ExtractedTask> tasks;
@@ -28,10 +28,12 @@ public class ClaudeAnalysisResult {
     public static class ExtractedEvent {
         private final String speakerLabel;
         private final Long userId;
+        private final List<Long> participantUserIds;
         private final String title;
         private final String description;
         private final String location;
         private final String startAt;
         private final String endAt;
+        private final Boolean isAllDay;
     }
 }

@@ -51,3 +51,7 @@ dependencies {
 tasks.named('test') {
     useJUnitPlatform()
 }
+
+tasks.named('processResources') {
+    doNotTrackState('OneDrive reparse-point resources cannot be snapshotted as regular files')
+}

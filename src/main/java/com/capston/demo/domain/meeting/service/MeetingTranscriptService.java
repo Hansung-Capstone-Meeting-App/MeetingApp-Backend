@@ -4,16 +4,23 @@ import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
 import com.capston.demo.domain.meeting.dto.response.SpeakerMappingResponse;
 import com.capston.demo.domain.meeting.dto.response.TranscriptResponse;
-import com.capston.demo.domain.meeting.entity.*;
-import com.capston.demo.domain.meeting.repository.*;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-
+import com.capston.demo.domain.meeting.entity.Meeting;
+import com.capston.demo.domain.meeting.entity.MeetingRecording;
+import com.capston.demo.domain.meeting.entity.MeetingTranscript;
+import com.capston.demo.domain.meeting.entity.SpeakerMapping;
+import com.capston.demo.domain.meeting.entity.TranscriptSegment;
+import com.capston.demo.domain.meeting.repository.MeetingRecordingRepository;
+import com.capston.demo.domain.meeting.repository.MeetingRepository;
+import com.capston.demo.domain.meeting.repository.MeetingTranscriptRepository;
+import com.capston.demo.domain.meeting.repository.SpeakerMappingRepository;
+import com.capston.demo.domain.meeting.repository.TranscriptSegmentRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
@@ -25,7 +32,6 @@ public class MeetingTranscriptService {
     private final TranscriptSegmentRepository segmentRepository;
     private final SpeakerMappingRepository speakerMappingRepository;
 
-    // STT 결과를 저장 (트랜스크립트 + 세그먼트)
     @Transactional
     public TranscriptResponse saveTranscript(Long meetingId, TranscriptRequest request) {
         Meeting meeting = meetingRepository.findById(meetingId)
@@ -68,12 +74,12 @@ public class MeetingTranscriptService {
 
     @Transactional(readOnly = true)
     public TranscriptResponse getTranscript(Long meetingId) {
-        MeetingTranscript transcript = transcriptRepository.findByMeetingId(meetingId)
+        MeetingTranscript transcript = transcriptRepository.findByMeetingIdOrderByCreatedAtDesc(meetingId).stream()
+                .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("트랜스크립트가 없습니다. meetingId=" + meetingId));
         return new TranscriptResponse(transcript);
     }
 
-    // 화자 매핑 저장 (SPEAKER_01 → 실제 유저)
     @Transactional
     public List<SpeakerMappingResponse> saveSpeakerMappings(Long transcriptId, SpeakerMappingRequest request) {
         MeetingTranscript transcript = transcriptRepository.findById(transcriptId)
@@ -82,26 +88,27 @@ public class MeetingTranscriptService {
         List<SpeakerMapping> result = new ArrayList<>();
 
         for (SpeakerMappingRequest.MappingItem item : request.getMappings()) {
-            // 이미 있으면 업데이트, 없으면 생성
             SpeakerMapping mapping = speakerMappingRepository
                     .findByTranscriptIdAndSpeakerLabel(transcriptId, item.getSpeakerLabel())
                     .orElseGet(() -> {
-                        SpeakerMapping m = new SpeakerMapping();
-                        m.setTranscript(transcript);
-                        m.setSpeakerLabel(item.getSpeakerLabel());
-                        return m;
+                        SpeakerMapping newMapping = new SpeakerMapping();
+                        newMapping.setTranscript(transcript);
+                        newMapping.setSpeakerLabel(item.getSpeakerLabel());
+                        return newMapping;
                     });
+
             mapping.setUserId(item.getUserId());
             result.add(speakerMappingRepository.save(mapping));
 
-            // 세그먼트의 userId도 동기화
             List<TranscriptSegment> segments = segmentRepository
                     .findByTranscriptIdAndSpeakerLabel(transcriptId, item.getSpeakerLabel());
-            segments.forEach(seg -> seg.setUserId(item.getUserId()));
+            segments.forEach(segment -> segment.setUserId(item.getUserId()));
             segmentRepository.saveAll(segments);
         }
 
-        return result.stream().map(SpeakerMappingResponse::new).collect(Collectors.toList());
+        return result.stream()
+                .map(SpeakerMappingResponse::new)
+                .collect(Collectors.toList());
     }
 
     @Transactional(readOnly = true)

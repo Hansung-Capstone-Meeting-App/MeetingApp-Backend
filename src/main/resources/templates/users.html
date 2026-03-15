@@ -6,82 +6,30 @@
     <title>사용자 목록</title>
 </head>
 <body>
-
 <h4>사용자 목록</h4>
-
 <div id="user-list"></div>
 <button onclick="logout()">로그아웃</button>
-
 <script>
-    // 페이지 로드 시 사용자 목록 가져오기
     async function loadUsers() {
         const token = localStorage.getItem('accessToken');
-
-        // ✅ Authorization 헤더에 토큰 포함
         const response = await fetch('/api/users', {
             headers: {
-                'Authorization': `Bearer ${token}`  // ← 여기서 토큰 사용!
+                Authorization: `Bearer ${token}`
             }
         });
-
         if (response.ok) {
             const users = await response.json();
-            displayUsers(users);
-        } else if (response.status === 401) {
-            // 토큰 만료 → 갱신 시도
-            const refreshed = await refreshToken();
-            if (refreshed) {
-                loadUsers();  // 재시도
-            } else {
-                alert('세션이 만료되었습니다. 다시 로그인해주세요.');
-                window.location.href = '/login';
-            }
+            document.getElementById('user-list').innerHTML = users.map(
+                (user) => `<div>${user.name} (${user.email})</div>`
+            ).join('');
         }
     }
-
-    // 토큰 갱신
-    async function refreshToken() {
-        const refreshToken = localStorage.getItem('refreshToken');
-
-        try {
-            const response = await fetch('/refresh', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({ refreshToken })
-            });
-
-            if (response.ok) {
-                const data = await response.json();
-                localStorage.setItem('accessToken', data.accessToken);
-                return true;
-            }
-        } catch (error) {
-            console.error('토큰 갱신 실패:', error);
-        }
-
-        return false;
-    }
-
-    // 사용자 목록 표시
-    function displayUsers(users) {
-        const listDiv = document.getElementById('user-list');
-        listDiv.innerHTML = users.map(user =>
-            `<div>${user.name} (${user.email})</div>`
-        ).join('');
-    }
-
-    // 로그아웃
     function logout() {
         localStorage.removeItem('accessToken');
         localStorage.removeItem('refreshToken');
         window.location.href = '/login';
     }
-
-    // 페이지 로드 시 실행
     loadUsers();
 </script>
-
 </body>
 </html>

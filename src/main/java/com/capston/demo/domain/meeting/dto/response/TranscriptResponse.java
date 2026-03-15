@@ -28,7 +28,7 @@ public class TranscriptResponse {
     /** meeting_transcripts.full_text - STT 변환 전체 텍스트 */
     private final String fullText;
 
-    /** meeting_transcripts.summary - Claude API 회의 요약 */
+    /** meeting_transcripts.summary - Gemini API 회의 요약 */
     private final String summary;
 
     /** meeting_transcripts.keywords - 핵심 키워드 JSON 문자열 예) ["예산","마감일"] */
