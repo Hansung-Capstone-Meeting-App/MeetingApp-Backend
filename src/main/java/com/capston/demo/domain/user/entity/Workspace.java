@@ -29,4 +29,11 @@ public class Workspace {
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
+
+    /** 테스트/개발용 더미 데이터 생성 시 사용 */
+    public Workspace(String name, String slug, User owner) {
+        this.name = name;
+        this.slug = slug;
+        this.owner = owner;
+    }
 }

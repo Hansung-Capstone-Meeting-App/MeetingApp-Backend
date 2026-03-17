@@ -37,7 +37,16 @@ public class User {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    @Column(name = "oauth_provider", length = 50)
+    private String oauthProvider;
+
+    @Column(name = "oauth_provider_id", length = 255)
+    private String oauthProviderId;
+
+    @Column(name = "oauth_linked_at")
+    private LocalDateTime oauthLinkedAt;
+
     public enum UserStatus {
-        online, offline, busy, away
+        online, offline, busy, away, deleted
     }
 }

@@ -1,10 +1,16 @@
 package com.capston.demo.domain.user.service;
 
+
+import com.capston.demo.domain.user.dto.UserProfileDto;
 import com.capston.demo.domain.user.dto.request.RegisterRequestDto;
+import com.capston.demo.domain.user.dto.request.UpdateUserNameRequestDto;
+import com.capston.demo.domain.user.dto.request.UpdateProfileImageRequestDto;
+import com.capston.demo.domain.user.dto.request.ChangePasswordRequestDto;
 import com.capston.demo.domain.user.dto.response.RegisterResponseDto;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.repository.UserRepository;
 import com.capston.demo.global.exception.DuplicateEmailException;
+import org.springframework.security.authentication.BadCredentialsException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -43,5 +49,76 @@ public class UserService {
                 savedUser.getName(),
                 savedUser.getCreatedAt()
         );
+    }
+
+    /**
+     * 사용자 프로필 조회 (OAuth 정보 포함)
+     */
+    @Transactional(readOnly = true)
+    public UserProfileDto getUserProfile(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+
+        return UserProfileDto.builder()
+                .id(user.getId())
+                .email(user.getEmail())
+                .name(user.getName())
+                .profileImg(user.getProfileImg())
+                .status(user.getStatus() != null ? user.getStatus().name() : null)
+                .createdAt(user.getCreatedAt())
+                .oauthProvider(user.getOauthProvider())
+                .oauthEmail(user.getEmail()) // OAuth 이메일은 일반 이메일과 동일
+                .oauthLinkedAt(user.getOauthLinkedAt())
+                .build();
+    }
+
+    /**
+     * 사용자 이름 변경
+     */
+    @Transactional
+    public void updateUserName(Long userId, UpdateUserNameRequestDto requestDto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+
+        user.setName(requestDto.getName());
+    }
+
+    /**
+     * 프로필 이미지 변경
+     */
+    @Transactional
+    public void updateProfileImage(Long userId, UpdateProfileImageRequestDto requestDto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+
+        user.setProfileImg(requestDto.getProfileImageUrl());
+    }
+
+    /**
+     * 계정 탈퇴 (Soft delete: status만 변경)
+     */
+    @Transactional
+    public void deleteAccount(Long userId) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+
+        user.setStatus(User.UserStatus.deleted);
+    }
+
+    /**
+     * 비밀번호 변경
+     */
+    @Transactional
+    public void changePassword(Long userId, ChangePasswordRequestDto requestDto) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+
+        // 현재 비밀번호 검증
+        if (!passwordEncoder.matches(requestDto.getCurrentPassword(), user.getPassword())) {
+            throw new BadCredentialsException("현재 비밀번호가 올바르지 않습니다");
+        }
+
+        // 새 비밀번호 설정
+        user.setPassword(passwordEncoder.encode(requestDto.getNewPassword()));
     }
 }

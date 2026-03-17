@@ -1,5 +1,6 @@
 package com.capston.demo.domain.user.service;
 
+
 import com.capston.demo.domain.user.dto.request.LoginRequestDto;
 import com.capston.demo.domain.user.dto.response.LoginResponseDto;
 import com.capston.demo.domain.user.dto.response.RefreshTokenResponseDto;
@@ -34,9 +35,24 @@ public class AuthService {
     @Value("${jwt.refresh-token-expiration}")
     private long refreshTokenExpiration;
 
-    // 로그인 처리: 이메일/비밀번호 검증 후 Access Token 및 Refresh Token 발급
+    // 일반 로그인 처리: 이메일/비밀번호 검증 후 Access Token 및 Refresh Token 발급
     @Transactional
     public LoginResponseDto login(LoginRequestDto requestDto) {
+        // 사용자 조회 및 비밀번호 검증
+        User user = validateAndGetUser(requestDto);
+
+        // JWT 토큰 생성 및 반환
+        return generateTokenResponse(user);
+    }
+
+    // OAuth 로그인 처리: 비밀번호 검증 없이 JWT 토큰 발급
+    @Transactional
+    public LoginResponseDto oauthLogin(User user) {
+        return generateTokenResponse(user);
+    }
+
+    // 비밀번호 검증 및 사용자 조회 (일반 로그인 전용)
+    private User validateAndGetUser(LoginRequestDto requestDto) {
         // 사용자 조회
         User user = userRepository.findByEmail(requestDto.getEmail())
                 .orElseThrow(() -> new BadCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다"));
@@ -46,9 +62,14 @@ public class AuthService {
             throw new BadCredentialsException("이메일 또는 비밀번호가 올바르지 않습니다");
         }
 
+        return user;
+    }
+
+    // JWT 토큰 생성 공통 로직
+    private LoginResponseDto generateTokenResponse(User user) {
         // 토큰 생성
-        String accessToken = jwtUtil.generateAccessToken(user.getEmail(), user.getId());
-        String refreshToken = jwtUtil.generateRefreshToken(user.getEmail(), user.getId());
+        String accessToken = jwtUtil.generateAccessToken(user.getEmail(), user.getId(), user.getName());
+        String refreshToken = jwtUtil.generateRefreshToken(user.getEmail(), user.getId(), user.getName());
 
         // 기존 Refresh Token 삭제 (한 사용자당 하나의 Refresh Token만 유지)
         refreshTokenRepository.findByUserId(user.getId())
@@ -59,8 +80,14 @@ public class AuthService {
         RefreshToken refreshTokenEntity = new RefreshToken(refreshToken, user.getId(), expiryDate);
         refreshTokenRepository.save(refreshTokenEntity);
 
-        // 응답 생성 (expiresIn은 초 단위)
-        return new LoginResponseDto(accessToken, refreshToken, accessTokenExpiration / 1000);
+        // 응답 생성 (expiresIn은 초 단위, 사용자 정보 포함)
+        return new LoginResponseDto(
+                accessToken,
+                refreshToken,
+                accessTokenExpiration / 1000,
+                user.getId(),
+                user.getName()
+        );
     }
 
     // Access Token 갱신: Refresh Token 검증 후 새로운 Access Token 발급
@@ -91,7 +118,7 @@ public class AuthService {
                 .orElseThrow(() -> new InvalidTokenException("존재하지 않는 사용자입니다"));
 
         // 새로운 액세스 토큰 생성
-        String newAccessToken = jwtUtil.generateAccessToken(email, userId);
+        String newAccessToken = jwtUtil.generateAccessToken(email, userId, jwtUtil.extractName(refreshToken));
 
         // 응답 생성 (expiresIn은 초 단위)
         return new RefreshTokenResponseDto(newAccessToken, accessTokenExpiration / 1000);

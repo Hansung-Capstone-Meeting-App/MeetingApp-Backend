@@ -27,23 +27,24 @@ public class JwtUtil {
     }
 
     // Access Token 생성 (1시간 유효)
-    public String generateAccessToken(String email, Long userId) {
-        return generateToken(email, userId, accessTokenExpiration);
+    public String generateAccessToken(String email, Long userId, String name) {
+        return generateToken(email, userId, name, accessTokenExpiration);
     }
 
     // Refresh Token 생성 (7일 유효)
-    public String generateRefreshToken(String email, Long userId) {
-        return generateToken(email, userId, refreshTokenExpiration);
+    public String generateRefreshToken(String email, Long userId, String name) {
+        return generateToken(email, userId, name, refreshTokenExpiration);
     }
 
     // JWT 토큰 생성 (공통 로직)
-    private String generateToken(String email, Long userId, long expiration) {
+    private String generateToken(String email, Long userId, String name, long expiration) {
         Date now = new Date();
         Date expiryDate = new Date(now.getTime() + expiration);
 
         return Jwts.builder()
                 .subject(email)
                 .claim("userId", userId)
+                .claim("name", name)
                 .issuedAt(now)
                 .expiration(expiryDate)
                 .signWith(secretKey)
@@ -71,6 +72,11 @@ public class JwtUtil {
     // 토큰에서 사용자 ID 추출
     public Long extractUserId(String token) {
         return getClaims(token).get("userId", Long.class);
+    }
+
+    // 토큰에서 사용자 이름 추출
+    public String extractName(String token) {
+        return getClaims(token).get("name", String.class);
     }
 
     // 토큰 만료 여부 확인

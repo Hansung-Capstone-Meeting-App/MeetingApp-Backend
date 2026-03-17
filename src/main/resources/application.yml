@@ -21,6 +21,37 @@ spring:
       ddl-auto: update
     open-in-view: false
 
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: ${GOOGLE_CLIENT_ID}
+            client-secret: ${GOOGLE_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            scope:
+              - openid
+              - email
+              - profile
+            redirect-uri: "{baseUrl}/api/oauth2/google/callback"
+          notion:
+            client-id: ${NOTION_CLIENT_ID}
+            client-secret: ${NOTION_CLIENT_SECRET}
+            authorization-grant-type: authorization_code
+            client-authentication-method: client_secret_post
+            scope: ${NOTION_SCOPE:read_user}
+            redirect-uri: "{baseUrl}/api/oauth2/notion/callback"
+        provider:
+          google:
+            authorization-uri: https://accounts.google.com/o/oauth2/v2/auth
+            token-uri: https://oauth2.googleapis.com/token
+            user-info-uri: https://www.googleapis.com/oauth2/v3/userinfo
+          notion:
+            authorization-uri: https://api.notion.com/v1/oauth/authorize
+            token-uri: https://api.notion.com/v1/oauth/token
+            user-info-uri: https://api.notion.com/v1/users/me
+            notion-version: ${NOTION_VERSION:2022-06-28}
+
 cloud:
   aws:
     s3:

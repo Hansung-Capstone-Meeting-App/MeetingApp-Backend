@@ -5,5 +5,6 @@ import java.util.List;
 
 public interface EventRepository extends JpaRepository<Event, Long> {
     List<Event> findByMeetingId(Long meetingId);
+    // 특정 워크스페이스에 속한 모든 이벤트 조회
     List<Event> findByWorkspaceId(Long workspaceId);
 }
