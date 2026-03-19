@@ -4,6 +4,7 @@ import com.capston.demo.domain.meeting.entity.RecordingStatus;
 import com.capston.demo.domain.recording.dto.request.PresignedUploadRequest;
 import com.capston.demo.domain.recording.dto.response.PresignedUrlResponse;
 import com.capston.demo.domain.recording.dto.response.RecordingResponse;
+import com.capston.demo.global.security.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -13,6 +14,7 @@ import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
@@ -124,7 +126,7 @@ public interface RecordingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "녹음 파일을 찾을 수 없음")
             }
     )
-    ResponseEntity<PresignedUrlResponse> getDownloadPresignedUrl(Long recordingId);
+    ResponseEntity<PresignedUrlResponse> getDownloadPresignedUrl(@AuthenticationPrincipal CustomUserDetails userDetails, Long recordingId);
 
     @Operation(
             summary = "녹음 파일 삭제",
@@ -137,5 +139,5 @@ public interface RecordingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "녹음 파일을 찾을 수 없음")
             }
     )
-    ResponseEntity<Void> deleteRecording(Long recordingId);
+    ResponseEntity<Void> deleteRecording(@AuthenticationPrincipal CustomUserDetails userDetails, Long recordingId);
 }

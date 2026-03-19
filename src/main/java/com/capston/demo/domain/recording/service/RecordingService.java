@@ -119,9 +119,13 @@ public class RecordingService {
 
     // ── Presigned GET URL (다운로드/재생용) ────────────────────────────────────
 
-    public PresignedUrlResponse generateDownloadPresignedUrl(Long recordingId) {
+    @Transactional(readOnly = true)
+    public PresignedUrlResponse generateDownloadPresignedUrl(Long recordingId, Long userId) {
         MeetingRecording recording = recordingRepository.findById(recordingId)
                 .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId));
+        if (!recording.getMeeting().getCreatedBy().equals(userId)) {
+            throw new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId);
+        }
 
         PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(
                 GetObjectPresignRequest.builder()
@@ -139,9 +143,12 @@ public class RecordingService {
     // ── 삭제 ──────────────────────────────────────────────────────────────────
 
     @Transactional
-    public void deleteRecording(Long recordingId) {
+    public void deleteRecording(Long recordingId, Long userId) {
         MeetingRecording recording = recordingRepository.findById(recordingId)
                 .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId));
+        if (!recording.getMeeting().getCreatedBy().equals(userId)) {
+            throw new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId);
+        }
 
         s3Client.deleteObject(DeleteObjectRequest.builder()
                 .bucket(recording.getS3Bucket())

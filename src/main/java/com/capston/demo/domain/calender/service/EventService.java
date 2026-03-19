@@ -15,15 +15,15 @@ public class EventService {
     private final EventRepository eventRepository;
 
     @Transactional(readOnly = true)
-    public List<EventResponse> getEvents(Long meetingId, Long workspaceId) {
+    public List<EventResponse> getEvents(Long meetingId, Long workspaceId, Long createdBy) {
         if (meetingId != null) {
-            return eventRepository.findByMeetingId(meetingId).stream()
+            return eventRepository.findByMeetingIdAndCreatedBy(meetingId, createdBy).stream()
                     .map(EventResponse::new)
                     .collect(Collectors.toList());
         }
 
         if (workspaceId != null) {
-            return eventRepository.findByWorkspaceId(workspaceId).stream()
+            return eventRepository.findByWorkspaceIdAndCreatedBy(workspaceId, createdBy).stream()
                     .map(EventResponse::new)
                     .collect(Collectors.toList());
         }

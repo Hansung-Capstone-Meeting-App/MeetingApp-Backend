@@ -6,8 +6,10 @@ import com.capston.demo.domain.recording.dto.request.PresignedUploadRequest;
 import com.capston.demo.domain.recording.dto.response.PresignedUrlResponse;
 import com.capston.demo.domain.recording.dto.response.RecordingResponse;
 import com.capston.demo.domain.recording.service.RecordingService;
+import com.capston.demo.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -57,15 +59,19 @@ public class RecordingController implements RecordingControllerDocs {
     // 녹음 파일 재생/다운로드용 Presigned GET URL 발급 (유효시간 1시간)
     // GET /api/recordings/{recordingId}/presigned-url
     @GetMapping("/{recordingId}/presigned-url")
-    public ResponseEntity<PresignedUrlResponse> getDownloadPresignedUrl(@PathVariable Long recordingId) {
-        return ResponseEntity.ok(recordingService.generateDownloadPresignedUrl(recordingId));
+    public ResponseEntity<PresignedUrlResponse> getDownloadPresignedUrl(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long recordingId) {
+        return ResponseEntity.ok(recordingService.generateDownloadPresignedUrl(recordingId, userDetails.getUserId()));
     }
 
     // 녹음 파일 삭제 (S3 + DB 동시 삭제)
     // DELETE /api/recordings/{recordingId}
     @DeleteMapping("/{recordingId}")
-    public ResponseEntity<Void> deleteRecording(@PathVariable Long recordingId) {
-        recordingService.deleteRecording(recordingId);
+    public ResponseEntity<Void> deleteRecording(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long recordingId) {
+        recordingService.deleteRecording(recordingId, userDetails.getUserId());
         return ResponseEntity.noContent().build();
     }
 }

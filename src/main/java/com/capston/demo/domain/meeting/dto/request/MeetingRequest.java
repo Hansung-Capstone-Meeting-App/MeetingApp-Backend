@@ -20,6 +20,4 @@ public class MeetingRequest {
     /** meetings.title - 회의 제목 */
     private String title;
 
-    /** meetings.created_by - 회의를 시작한 유저 ID (users.id 참조) */
-    private Long createdBy;
 }

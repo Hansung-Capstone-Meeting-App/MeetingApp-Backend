@@ -4,6 +4,7 @@ import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
 import com.capston.demo.domain.meeting.entity.Meeting;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
+import com.capston.demo.domain.user.repository.WorkspaceMemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,50 +18,56 @@ import java.util.stream.Collectors;
 public class MeetingService {
 
     private final MeetingRepository meetingRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
 
     @Transactional
-    public MeetingResponse startMeeting(MeetingRequest request) {
+    public MeetingResponse startMeeting(MeetingRequest request, Long createdBy) {
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(request.getWorkspaceId(), createdBy)) {
+            throw new IllegalArgumentException("해당 워크스페이스의 멤버가 아닙니다.");
+        }
         Meeting meeting = new Meeting();
         meeting.setWorkspaceId(request.getWorkspaceId());
         meeting.setChannelId(request.getChannelId());
         meeting.setTitle(request.getTitle());
-        meeting.setCreatedBy(request.getCreatedBy());
+        meeting.setCreatedBy(createdBy);
         meeting.setStartedAt(LocalDateTime.now());
         return new MeetingResponse(meetingRepository.save(meeting));
     }
 
     @Transactional
-    public MeetingResponse endMeeting(Long meetingId) {
-        Meeting meeting = meetingRepository.findById(meetingId)
+    public MeetingResponse endMeeting(Long meetingId, Long userId) {
+        Meeting meeting = meetingRepository.findByIdAndCreatedBy(meetingId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
         meeting.setEndedAt(LocalDateTime.now());
         return new MeetingResponse(meeting);
     }
 
     @Transactional(readOnly = true)
-    public MeetingResponse getMeeting(Long meetingId) {
-        Meeting meeting = meetingRepository.findById(meetingId)
+    public MeetingResponse getMeeting(Long meetingId, Long userId) {
+        Meeting meeting = meetingRepository.findByIdAndCreatedBy(meetingId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
         return new MeetingResponse(meeting);
     }
 
     @Transactional(readOnly = true)
-    public List<MeetingResponse> getMeetings(Long workspaceId, Long channelId) {
+    public List<MeetingResponse> getMeetings(Long workspaceId, Long channelId, Long createdBy) {
         List<Meeting> meetings;
         if (workspaceId != null && channelId != null) {
-            meetings = meetingRepository.findByWorkspaceIdAndChannelIdOrderByCreatedAtDesc(workspaceId, channelId);
+            meetings = meetingRepository.findByWorkspaceIdAndChannelIdAndCreatedByOrderByCreatedAtDesc(workspaceId, channelId, createdBy);
         } else if (workspaceId != null) {
-            meetings = meetingRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
+            meetings = meetingRepository.findByWorkspaceIdAndCreatedByOrderByCreatedAtDesc(workspaceId, createdBy);
         } else if (channelId != null) {
-            meetings = meetingRepository.findByChannelIdOrderByCreatedAtDesc(channelId);
+            meetings = meetingRepository.findByChannelIdAndCreatedByOrderByCreatedAtDesc(channelId, createdBy);
         } else {
-            meetings = meetingRepository.findAll();
+            meetings = meetingRepository.findByCreatedByOrderByCreatedAtDesc(createdBy);
         }
         return meetings.stream().map(MeetingResponse::new).collect(Collectors.toList());
     }
 
     @Transactional
-    public void deleteMeeting(Long meetingId) {
-        meetingRepository.deleteById(meetingId);
+    public void deleteMeeting(Long meetingId, Long userId) {
+        Meeting meeting = meetingRepository.findByIdAndCreatedBy(meetingId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
+        meetingRepository.delete(meeting);
     }
 }

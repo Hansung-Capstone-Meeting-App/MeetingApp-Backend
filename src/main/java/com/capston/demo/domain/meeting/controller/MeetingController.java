@@ -9,8 +9,10 @@ import com.capston.demo.domain.meeting.dto.response.SpeakerMappingResponse;
 import com.capston.demo.domain.meeting.dto.response.TranscriptResponse;
 import com.capston.demo.domain.meeting.service.MeetingService;
 import com.capston.demo.domain.meeting.service.MeetingTranscriptService;
+import com.capston.demo.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -25,41 +27,50 @@ public class MeetingController implements MeetingControllerDocs {
 
     // ── 회의 ──────────────────────────────────────────────────────────────────
 
-    // 회의 시작 (application/json, { workspaceId, channelId, title, ... })
+    // 회의 시작 (application/json, { workspaceId, channelId, title })
     // POST /api/meetings
     @PostMapping
-    public ResponseEntity<MeetingResponse> startMeeting(@RequestBody MeetingRequest request) {
-        return ResponseEntity.ok(meetingService.startMeeting(request));
+    public ResponseEntity<MeetingResponse> startMeeting(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestBody MeetingRequest request) {
+        return ResponseEntity.ok(meetingService.startMeeting(request, userDetails.getUserId()));
     }
 
     // 회의 종료 (endedAt 기록)
     // PATCH /api/meetings/{id}/end
     @PatchMapping("/{id}/end")
-    public ResponseEntity<MeetingResponse> endMeeting(@PathVariable Long id) {
-        return ResponseEntity.ok(meetingService.endMeeting(id));
+    public ResponseEntity<MeetingResponse> endMeeting(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(meetingService.endMeeting(id, userDetails.getUserId()));
     }
 
     // 회의 단건 조회
     // GET /api/meetings/{id}
     @GetMapping("/{id}")
-    public ResponseEntity<MeetingResponse> getMeeting(@PathVariable Long id) {
-        return ResponseEntity.ok(meetingService.getMeeting(id));
+    public ResponseEntity<MeetingResponse> getMeeting(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(meetingService.getMeeting(id, userDetails.getUserId()));
     }
 
     // 회의 목록 조회 (workspaceId, channelId 중 하나 이상 필터 가능)
     // GET /api/meetings?workspaceId=1&channelId=2
     @GetMapping
     public ResponseEntity<List<MeetingResponse>> getMeetings(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestParam(required = false) Long workspaceId,
             @RequestParam(required = false) Long channelId) {
-        return ResponseEntity.ok(meetingService.getMeetings(workspaceId, channelId));
+        return ResponseEntity.ok(meetingService.getMeetings(workspaceId, channelId, userDetails.getUserId()));
     }
 
     // 회의 삭제
     // DELETE /api/meetings/{id}
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteMeeting(@PathVariable Long id) {
-        meetingService.deleteMeeting(id);
+    public ResponseEntity<Void> deleteMeeting(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long id) {
+        meetingService.deleteMeeting(id, userDetails.getUserId());
         return ResponseEntity.noContent().build();
     }
 
@@ -77,8 +88,10 @@ public class MeetingController implements MeetingControllerDocs {
     // 트랜스크립트 조회
     // GET /api/meetings/{meetingId}/transcript
     @GetMapping("/{meetingId}/transcript")
-    public ResponseEntity<TranscriptResponse> getTranscript(@PathVariable Long meetingId) {
-        return ResponseEntity.ok(transcriptService.getTranscript(meetingId));
+    public ResponseEntity<TranscriptResponse> getTranscript(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long meetingId) {
+        return ResponseEntity.ok(transcriptService.getTranscript(meetingId, userDetails.getUserId()));
     }
 
     // ── 화자 매핑 ─────────────────────────────────────────────────────────────

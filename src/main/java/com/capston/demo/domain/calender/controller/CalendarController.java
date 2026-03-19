@@ -111,7 +111,7 @@ public class CalendarController {
                     if (link.getCalendarDatabaseId() == null || link.getCalendarDatabaseId().isBlank()) {
                         return ResponseEntity.badRequest().body(Map.of("error", "캘린더로 사용할 노션 데이터베이스를 먼저 등록해주세요. PUT /api/oauth2/notion/calendar-database 를 사용하세요."));
                     }
-                    List<Event> events = eventRepository.findByWorkspaceId(workspaceId);
+                    List<Event> events = eventRepository.findByWorkspaceIdAndCreatedBy(workspaceId, userId);
                     if (events.isEmpty()) {
                         return ResponseEntity.ok().body(Map.of(
                                 "workspaceId", workspaceId,
@@ -158,7 +158,7 @@ public class CalendarController {
             return ResponseEntity.status(403).body("User is not a member of this workspace");
         }
 
-        List<Event> events = eventRepository.findByWorkspaceId(workspaceId); //해당 워크스페이스에 속한 모든 Event 조회
+        List<Event> events = eventRepository.findByWorkspaceIdAndCreatedBy(workspaceId, userId); //해당 워크스페이스에서 현재 사용자가 생성한 Event 조회
         return ResponseEntity.ok(events);
     }
 

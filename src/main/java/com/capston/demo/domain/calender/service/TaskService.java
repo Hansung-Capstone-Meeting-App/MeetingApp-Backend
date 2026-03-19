@@ -15,15 +15,15 @@ public class TaskService {
     private final TaskRepository taskRepository;
 
     @Transactional(readOnly = true)
-    public List<TaskResponse> getTasks(Long meetingId, Long workspaceId, Long assigneeId) {
+    public List<TaskResponse> getTasks(Long meetingId, Long workspaceId, Long assigneeId, Long createdBy) {
         if (meetingId != null) {
-            return taskRepository.findByMeetingId(meetingId).stream()
+            return taskRepository.findByMeetingIdAndCreatedBy(meetingId, createdBy).stream()
                     .map(TaskResponse::new)
                     .collect(Collectors.toList());
         }
 
         if (workspaceId != null) {
-            return taskRepository.findByWorkspaceId(workspaceId).stream()
+            return taskRepository.findByWorkspaceIdAndCreatedBy(workspaceId, createdBy).stream()
                     .map(TaskResponse::new)
                     .collect(Collectors.toList());
         }

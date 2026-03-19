@@ -54,13 +54,16 @@ public class MeetingAnalysisService {
     private final ObjectMapper objectMapper;
 
     @Transactional
-    public void analyze(Long meetingId, Long recordingId, List<GeminiAnalysisResult.SpeakerInfo> speakerInfos) {
+    public void analyze(Long meetingId, Long recordingId, List<GeminiAnalysisResult.SpeakerInfo> speakerInfos, Long userId) {
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
+        if (!meeting.getCreatedBy().equals(userId)) {
+            throw new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId);
+        }
         MeetingRecording recording = recordingRepository.findById(recordingId)
                 .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId));
 
-        String audioUrl = recordingService.generateDownloadPresignedUrl(recordingId).getPresignedUrl();
+        String audioUrl = recordingService.generateDownloadPresignedUrl(recordingId, userId).getPresignedUrl();
         AssemblyAiTranscriptResult stt = assemblyAiService.transcribe(audioUrl);
         GeminiAnalysisResult analysis = geminiAiService.analyze(
                 stt,

@@ -3,9 +3,11 @@ package com.capston.demo.domain.calender.controller;
 import com.capston.demo.domain.calender.controllerDocs.TaskControllerDocs;
 import com.capston.demo.domain.calender.dto.response.TaskResponse;
 import com.capston.demo.domain.calender.service.TaskService;
+import com.capston.demo.global.security.CustomUserDetails;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,10 +22,12 @@ public class TaskController implements TaskControllerDocs {
 
     @GetMapping
     public ResponseEntity<List<TaskResponse>> getTasks(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestParam(required = false) Long meetingId,
             @RequestParam(required = false) Long workspaceId,
             @RequestParam(required = false) Long assigneeId
     ) {
-        return ResponseEntity.ok(taskService.getTasks(meetingId, workspaceId, assigneeId));
+        Long userId = userDetails.getUserId();
+        return ResponseEntity.ok(taskService.getTasks(meetingId, workspaceId, assigneeId, userId));
     }
 }

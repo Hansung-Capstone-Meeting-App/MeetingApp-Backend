@@ -73,7 +73,9 @@ public class MeetingTranscriptService {
     }
 
     @Transactional(readOnly = true)
-    public TranscriptResponse getTranscript(Long meetingId) {
+    public TranscriptResponse getTranscript(Long meetingId, Long userId) {
+        meetingRepository.findByIdAndCreatedBy(meetingId, userId)
+                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
         MeetingTranscript transcript = transcriptRepository.findByMeetingIdOrderByCreatedAtDesc(meetingId).stream()
                 .findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("트랜스크립트가 없습니다. meetingId=" + meetingId));

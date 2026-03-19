@@ -6,6 +6,7 @@ import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
 import com.capston.demo.domain.meeting.dto.response.SpeakerMappingResponse;
 import com.capston.demo.domain.meeting.dto.response.TranscriptResponse;
+import com.capston.demo.global.security.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -15,6 +16,7 @@ import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.List;
 
@@ -37,8 +39,7 @@ public interface MeetingControllerDocs {
                                             {
                                               "workspaceId": 1,
                                               "channelId": 2,
-                                              "title": "주간 팀 회의",
-                                              "createdBy": 10
+                                              "title": "주간 팀 회의"
                                             }
                                             """
                             )
@@ -49,7 +50,7 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "400", description = "잘못된 요청")
             }
     )
-    ResponseEntity<MeetingResponse> startMeeting(MeetingRequest request);
+    ResponseEntity<MeetingResponse> startMeeting(@AuthenticationPrincipal CustomUserDetails userDetails, MeetingRequest request);
 
     @Operation(
             summary = "회의 종료",
@@ -62,7 +63,7 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음")
             }
     )
-    ResponseEntity<MeetingResponse> endMeeting(Long id);
+    ResponseEntity<MeetingResponse> endMeeting(@AuthenticationPrincipal CustomUserDetails userDetails, Long id);
 
     @Operation(
             summary = "회의 단건 조회",
@@ -74,7 +75,7 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음")
             }
     )
-    ResponseEntity<MeetingResponse> getMeeting(Long id);
+    ResponseEntity<MeetingResponse> getMeeting(@AuthenticationPrincipal CustomUserDetails userDetails, Long id);
 
     @Operation(
             summary = "회의 목록 조회",
@@ -87,7 +88,7 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "200", description = "조회 성공")
             }
     )
-    ResponseEntity<List<MeetingResponse>> getMeetings(Long workspaceId, Long channelId);
+    ResponseEntity<List<MeetingResponse>> getMeetings(@AuthenticationPrincipal CustomUserDetails userDetails, Long workspaceId, Long channelId);
 
     @Operation(
             summary = "회의 삭제",
@@ -99,7 +100,7 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음")
             }
     )
-    ResponseEntity<Void> deleteMeeting(Long id);
+    ResponseEntity<Void> deleteMeeting(@AuthenticationPrincipal CustomUserDetails userDetails, Long id);
 
     // ── 트랜스크립트 ───────────────────────────────────────────────────────────
 
@@ -156,7 +157,7 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "트랜스크립트를 찾을 수 없음")
             }
     )
-    ResponseEntity<TranscriptResponse> getTranscript(Long meetingId);
+    ResponseEntity<TranscriptResponse> getTranscript(@AuthenticationPrincipal CustomUserDetails userDetails, Long meetingId);
 
     // ── 화자 매핑 ─────────────────────────────────────────────────────────────
 
