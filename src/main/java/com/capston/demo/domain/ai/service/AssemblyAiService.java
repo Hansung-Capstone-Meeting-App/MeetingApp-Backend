@@ -31,6 +31,7 @@ public class AssemblyAiService {
         WebClient client = WebClient.builder().baseUrl(baseUrl)
                 .defaultHeader("Authorization", apiKey)
                 .defaultHeader("Content-Type", "application/json")
+                .codecs(cfg -> cfg.defaultCodecs().maxInMemorySize(10 * 1024 * 1024))
                 .build();
 
         String id = submitTranscript(client, audioUrl);

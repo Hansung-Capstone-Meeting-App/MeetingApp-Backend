@@ -22,7 +22,8 @@ public class MeetingService {
 
     @Transactional
     public MeetingResponse startMeeting(MeetingRequest request, Long createdBy) {
-        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(request.getWorkspaceId(), createdBy)) {
+        if (request.getWorkspaceId() != null &&
+                !workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(request.getWorkspaceId(), createdBy)) {
             throw new IllegalArgumentException("해당 워크스페이스의 멤버가 아닙니다.");
         }
         Meeting meeting = new Meeting();
