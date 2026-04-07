@@ -25,4 +25,7 @@ public class SpeakerMapping {
     private String speakerLabel;
 
     private Long userId;
+
+    @Column(name = "user_name", length = 100)
+    private String userName;
 }

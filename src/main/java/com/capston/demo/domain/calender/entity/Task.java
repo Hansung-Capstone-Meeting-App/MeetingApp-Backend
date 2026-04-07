@@ -20,6 +20,9 @@ public class Task {
 
     private Long assigneeId;
 
+    @Column(name = "assignee_name", length = 100)
+    private String assigneeName;
+
     private Long createdBy;
 
     @Column(nullable = false, length = 500)

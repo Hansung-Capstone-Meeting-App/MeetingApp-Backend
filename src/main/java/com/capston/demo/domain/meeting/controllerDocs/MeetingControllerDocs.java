@@ -163,8 +163,10 @@ public interface MeetingControllerDocs {
 
     @Operation(
             summary = "화자 매핑 저장",
-            description = "STT가 부여한 화자 레이블(SPEAKER_01 등)을 실제 유저와 연결합니다.\n\n" +
-                    "기존 매핑이 있으면 덮어씁니다.",
+            description = "STT가 부여한 화자 레이블을 이름과 연결합니다.\n\n" +
+                    "- `userName`: 화자 이름 직접 입력 (필수)\n" +
+                    "- `userId`: 추후 메신저 기능 연동 시 사용 (현재는 생략 가능)\n" +
+                    "- 기존 매핑이 있으면 덮어씁니다.",
             parameters = {
                     @Parameter(name = "transcriptId", description = "트랜스크립트 ID", example = "1", required = true)
             },
@@ -178,8 +180,8 @@ public interface MeetingControllerDocs {
                                     value = """
                                             {
                                               "mappings": [
-                                                { "speakerLabel": "SPEAKER_01", "userId": 10 },
-                                                { "speakerLabel": "SPEAKER_02", "userId": 11 }
+                                                { "speakerLabel": "A", "userName": "김철수" },
+                                                { "speakerLabel": "B", "userName": "박영희" }
                                               ]
                                             }
                                             """

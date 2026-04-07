@@ -28,7 +28,10 @@ public class SpeakerMappingRequest {
         /** speaker_mappings.speaker_label - STT가 부여한 화자 레이블 예) "SPEAKER_01" */
         private String speakerLabel;
 
-        /** speaker_mappings.user_id - 매핑할 실제 유저 ID (users.id 참조) */
+        /** speaker_mappings.user_name - 화자 이름 (현재는 직접 입력, 추후 톡방 멤버 선택으로 대체) */
+        private String userName;
+
+        /** speaker_mappings.user_id - 매핑할 실제 유저 ID (메신저 기능 추가 후 사용) */
         private Long userId;
     }
 }

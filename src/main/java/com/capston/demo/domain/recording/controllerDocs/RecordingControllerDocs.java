@@ -5,6 +5,7 @@ import com.capston.demo.domain.recording.dto.request.PresignedUploadRequest;
 import com.capston.demo.domain.recording.dto.response.PresignedUrlResponse;
 import com.capston.demo.domain.recording.dto.response.RecordingResponse;
 import com.capston.demo.global.security.CustomUserDetails;
+import com.capston.demo.domain.recording.dto.request.RecordingFileUploadRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.media.Content;
@@ -13,6 +14,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.parameters.RequestBody;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.multipart.MultipartFile;
@@ -30,9 +32,14 @@ public interface RecordingControllerDocs {
                     "- 허용 확장자: `.m4a`, `.mp3`\n" +
                     "- 업로드 완료 후 DB에 녹음 레코드가 자동 생성됩니다.",
             parameters = {
-                    @Parameter(name = "meetingId", description = "회의 ID", example = "1", required = true),
-                    @Parameter(name = "file", description = "업로드할 음성 파일 (.m4a 또는 .mp3)", required = true)
+                    @Parameter(name = "meetingId", description = "회의 ID", example = "1", required = true)
             },
+            requestBody = @RequestBody(
+                    content = @Content(
+                            mediaType = MediaType.MULTIPART_FORM_DATA_VALUE,
+                            schema = @Schema(implementation = RecordingFileUploadRequest.class)
+                    )
+            ),
             responses = {
                     @ApiResponse(responseCode = "200", description = "업로드 성공"),
                     @ApiResponse(responseCode = "400", description = "허용되지 않는 파일 형식 또는 빈 파일"),

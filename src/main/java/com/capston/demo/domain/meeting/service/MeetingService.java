@@ -4,7 +4,6 @@ import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
 import com.capston.demo.domain.meeting.entity.Meeting;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
-import com.capston.demo.domain.user.repository.WorkspaceMemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -18,14 +17,9 @@ import java.util.stream.Collectors;
 public class MeetingService {
 
     private final MeetingRepository meetingRepository;
-    private final WorkspaceMemberRepository workspaceMemberRepository;
 
     @Transactional
     public MeetingResponse startMeeting(MeetingRequest request, Long createdBy) {
-        if (request.getWorkspaceId() != null &&
-                !workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(request.getWorkspaceId(), createdBy)) {
-            throw new IllegalArgumentException("해당 워크스페이스의 멤버가 아닙니다.");
-        }
         Meeting meeting = new Meeting();
         meeting.setWorkspaceId(request.getWorkspaceId());
         meeting.setChannelId(request.getChannelId());

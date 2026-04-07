@@ -2,6 +2,10 @@ spring:
   application:
     name: demo
 
+  devtools:
+    restart:
+      enabled: false
+
   servlet:
     multipart:
       max-file-size: 100MB

@@ -47,6 +47,10 @@ public class Event {
     // 이벤트를 생성한 사용자 ID (User와 연관관계로 확장 가능)
     private Long createdBy;
 
+    // 이벤트를 생성한 사용자 이름 (메신저 연동 전 직접 입력)
+    @Column(name = "created_by_name", length = 100)
+    private String createdByName;
+
     // 관련 회의(미팅) 엔티티와 연결하기 위한 식별자
     private Long meetingId; // 회의 도메인과 연결
 

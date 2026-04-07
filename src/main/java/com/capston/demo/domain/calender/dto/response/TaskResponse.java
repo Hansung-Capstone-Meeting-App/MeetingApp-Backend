@@ -13,6 +13,7 @@ public class TaskResponse {
     private final Long workspaceId;
     private final Long meetingId;
     private final Long assigneeId;
+    private final String assigneeName;
     private final Long createdBy;
     private final String title;
     private final String description;
@@ -26,6 +27,7 @@ public class TaskResponse {
         this.workspaceId = task.getWorkspaceId();
         this.meetingId = task.getMeetingId();
         this.assigneeId = task.getAssigneeId();
+        this.assigneeName = task.getAssigneeName();
         this.createdBy = task.getCreatedBy();
         this.title = task.getTitle();
         this.description = task.getDescription();

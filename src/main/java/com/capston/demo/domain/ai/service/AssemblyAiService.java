@@ -1,6 +1,6 @@
 package com.capston.demo.domain.ai.service;
 
-import com.capston.demo.domain.ai.dto.AssemblyAiTranscriptResult;
+import com.capston.demo.domain.ai.dto.internal.AssemblyAiTranscriptResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;

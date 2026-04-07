@@ -99,13 +99,9 @@ public class MeetingTranscriptService {
                         return newMapping;
                     });
 
+            mapping.setUserName(item.getUserName());
             mapping.setUserId(item.getUserId());
             result.add(speakerMappingRepository.save(mapping));
-
-            List<TranscriptSegment> segments = segmentRepository
-                    .findByTranscriptIdAndSpeakerLabel(transcriptId, item.getSpeakerLabel());
-            segments.forEach(segment -> segment.setUserId(item.getUserId()));
-            segmentRepository.saveAll(segments);
         }
 
         return result.stream()

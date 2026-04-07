@@ -20,13 +20,17 @@ public class SpeakerMappingResponse {
     /** speaker_mappings.speaker_label - STT 화자 레이블 예) "SPEAKER_01" */
     private final String speakerLabel;
 
-    /** speaker_mappings.user_id - 매핑된 실제 유저 ID (users.id 참조) */
+    /** speaker_mappings.user_name - 화자 이름 */
+    private final String userName;
+
+    /** speaker_mappings.user_id - 매핑된 실제 유저 ID (메신저 기능 추가 후 채워짐) */
     private final Long userId;
 
     public SpeakerMappingResponse(SpeakerMapping mapping) {
         this.id = mapping.getId();
         this.transcriptId = mapping.getTranscript().getId();
         this.speakerLabel = mapping.getSpeakerLabel();
+        this.userName = mapping.getUserName();
         this.userId = mapping.getUserId();
     }
 }

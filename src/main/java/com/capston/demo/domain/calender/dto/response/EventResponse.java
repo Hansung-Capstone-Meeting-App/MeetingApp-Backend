@@ -21,6 +21,7 @@ public class EventResponse {
     private final LocalDateTime endAt;
     private final Boolean isAllDay;
     private final Long createdBy;
+    private final String createdByName;
     private final String color;
     private final LocalDateTime createdAt;
     private final List<ParticipantResponse> participants;
@@ -36,6 +37,7 @@ public class EventResponse {
         this.endAt = event.getEndAt();
         this.isAllDay = event.getIsAllDay();
         this.createdBy = event.getCreatedBy();
+        this.createdByName = event.getCreatedByName();
         this.color = event.getColor();
         this.createdAt = event.getCreatedAt();
         this.participants = event.getParticipants().stream()

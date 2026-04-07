@@ -1,7 +1,7 @@
 package com.capston.demo.domain.ai.service;
 
-import com.capston.demo.domain.ai.dto.AssemblyAiTranscriptResult;
-import com.capston.demo.domain.ai.dto.GeminiAnalysisResult;
+import com.capston.demo.domain.ai.dto.internal.AssemblyAiTranscriptResult;
+import com.capston.demo.domain.ai.dto.internal.GeminiAnalysisResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -102,7 +102,9 @@ public class GeminiAiService {
         sb.append("회의록의 '오늘', '내일', '다음 주', '화요일', '수요일' 같은 상대 날짜 표현은 반드시 회의 기준 날짜를 기준으로 해석하라.\n");
         sb.append("tasks와 events는 회의에서 실제로 하기로 정했거나 마감 목표가 언급된 내용만 추출하라.\n");
         sb.append("불확실한 잡담이나 단순 의견은 제외하되, '올릴게요', '배포할게요', '추가해볼게요', '완료할게요' 같은 실행 약속은 포함하라.\n");
-        sb.append("담당자가 명확하면 userId를 넣고, 불명확하면 null을 넣어라.\n");
+        sb.append("아래 참여자 목록에서 speakerLabel(예: A, B)과 회의록의 화자 레이블이 일치한다.\n");
+        sb.append("tasks의 담당자가 명확하면 해당 화자의 userName을 assigneeName에 넣고, 불명확하면 null을 넣어라.\n");
+        sb.append("events의 createdByName은 해당 일정을 제안하거나 주도한 화자의 userName을 넣고, 불명확하면 null을 넣어라.\n");
         sb.append("keywords는 3~8개만 간결하게 반환하라.\n");
         sb.append("summary는 2~4문장으로 작성하라.\n");
         sb.append("tasks.dueDate는 마감 시점이 명확할 때만 yyyy-MM-dd'T'HH:mm:ss 형식으로 반환하고, 불명확하면 null로 반환하라.\n");
@@ -120,9 +122,8 @@ public class GeminiAiService {
         for (GeminiAnalysisResult.SpeakerInfo info : speakerInfos) {
             sb.append(String.format(
                     Locale.ROOT,
-                    "- speaker=%s, userId=%s, userName=%s%n",
+                    "- speakerLabel=%s, userName=%s%n",
                     info.getSpeakerLabel(),
-                    info.getUserId(),
                     info.getUserName()
             ));
         }
@@ -135,8 +136,8 @@ public class GeminiAiService {
         sb.append("\n아래 스키마에 맞는 유효한 JSON만 반환하라.\n");
         sb.append("설명 문장, 마크다운 코드블록, 추가 텍스트는 절대 포함하지 마라.\n");
         sb.append("{\"summary\":\"string\",\"keywords\":[\"string\"],");
-        sb.append("\"tasks\":[{\"speakerLabel\":\"string\",\"userId\":null,\"title\":\"string\",\"description\":\"string\",\"dueDate\":null}],");
-        sb.append("\"events\":[{\"speakerLabel\":\"string\",\"userId\":null,\"participantUserIds\":[],\"title\":\"string\",\"description\":\"string\",\"location\":null,\"startAt\":\"yyyy-MM-dd'T'HH:mm:ss\",\"endAt\":\"yyyy-MM-dd'T'HH:mm:ss\",\"isAllDay\":false}]}");
+        sb.append("\"tasks\":[{\"speakerLabel\":\"string\",\"assigneeName\":null,\"title\":\"string\",\"description\":\"string\",\"dueDate\":null}],");
+        sb.append("\"events\":[{\"speakerLabel\":\"string\",\"userId\":null,\"createdByName\":null,\"participantUserIds\":[],\"title\":\"string\",\"description\":\"string\",\"location\":null,\"startAt\":\"yyyy-MM-dd'T'HH:mm:ss\",\"endAt\":\"yyyy-MM-dd'T'HH:mm:ss\",\"isAllDay\":false}]}");
         return sb.toString();
     }
 
@@ -158,7 +159,7 @@ public class GeminiAiService {
             List<GeminiAnalysisResult.ExtractedTask> tasks = new ArrayList<>();
             root.path("tasks").forEach(task -> tasks.add(new GeminiAnalysisResult.ExtractedTask(
                     task.path("speakerLabel").asText(),
-                    task.path("userId").isNull() ? null : task.path("userId").asLong(),
+                    task.path("assigneeName").isNull() ? null : task.path("assigneeName").asText(),
                     task.path("title").asText(),
                     task.path("description").asText(""),
                     task.path("dueDate").isNull() ? null : task.path("dueDate").asText()
@@ -168,6 +169,7 @@ public class GeminiAiService {
             root.path("events").forEach(event -> events.add(new GeminiAnalysisResult.ExtractedEvent(
                     event.path("speakerLabel").asText(),
                     event.path("userId").isNull() ? null : event.path("userId").asLong(),
+                    event.path("createdByName").isNull() ? null : event.path("createdByName").asText(),
                     parseParticipantUserIds(event.path("participantUserIds")),
                     event.path("title").asText(),
                     event.path("description").asText(""),
