@@ -16,13 +16,9 @@ import com.capston.demo.domain.meeting.entity.Meeting;
 import com.capston.demo.domain.meeting.entity.MeetingRecording;
 import com.capston.demo.domain.meeting.entity.MeetingTranscript;
 import com.capston.demo.domain.meeting.entity.RecordingStatus;
-import com.capston.demo.domain.meeting.entity.SpeakerMapping;
-import com.capston.demo.domain.meeting.entity.TranscriptSegment;
 import com.capston.demo.domain.meeting.repository.MeetingRecordingRepository;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
-import com.capston.demo.domain.meeting.repository.MeetingTranscriptRepository;
-import com.capston.demo.domain.meeting.repository.SpeakerMappingRepository;
-import com.capston.demo.domain.meeting.repository.TranscriptSegmentRepository;
+import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoRepository;
 import com.capston.demo.domain.recording.service.RecordingService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
@@ -50,9 +46,7 @@ public class MeetingAnalysisService {
     private final MeetingRepository meetingRepository;
     private final MeetingRecordingRepository recordingRepository;
     private final RecordingService recordingService;
-    private final MeetingTranscriptRepository transcriptRepository;
-    private final TranscriptSegmentRepository segmentRepository;
-    private final SpeakerMappingRepository speakerMappingRepository;
+    private final MeetingTranscriptMongoRepository transcriptRepository;
     private final EventRepository eventRepository;
     private final TaskRepository taskRepository;
     private final ObjectMapper objectMapper;
@@ -76,22 +70,21 @@ public class MeetingAnalysisService {
         AssemblyAiTranscriptResult stt = assemblyAiService.transcribe(audioUrl);
 
         MeetingTranscript transcript = new MeetingTranscript();
-        transcript.setMeeting(meeting);
-        transcript.setRecording(recording);
+        transcript.setMeetingId(meetingId);
+        transcript.setRecordingId(recordingId);
         transcript.setFullText(stt.getFullText());
-        MeetingTranscript saved = transcriptRepository.save(transcript);
 
         List<TranscribeResponse.SegmentInfo> segmentInfos = new ArrayList<>();
+        List<MeetingTranscript.SegmentEmbedded> segments = new ArrayList<>();
         int sequence = 0;
         for (AssemblyAiTranscriptResult.Utterance utterance : stt.getUtterances()) {
-            TranscriptSegment segment = new TranscriptSegment();
-            segment.setTranscript(saved);
+            MeetingTranscript.SegmentEmbedded segment = new MeetingTranscript.SegmentEmbedded();
             segment.setSpeakerLabel(utterance.getSpeaker());
             segment.setContent(utterance.getText());
             segment.setStartSec((float) utterance.getStartSec());
             segment.setEndSec((float) utterance.getEndSec());
             segment.setSequence(sequence++);
-            segmentRepository.save(segment);
+            segments.add(segment);
 
             segmentInfos.add(new TranscribeResponse.SegmentInfo(
                     utterance.getSpeaker(),
@@ -100,25 +93,26 @@ public class MeetingAnalysisService {
                     (float) utterance.getEndSec()
             ));
         }
+        transcript.setSegments(segments);
 
+        MeetingTranscript saved = transcriptRepository.save(transcript);
         return new TranscribeResponse(saved.getId(), segmentInfos);
     }
 
     // ── 3단계: Gemini 분석 ─────────────────────────────────────────────────────
 
     @Transactional
-    public GeminiAnalyzeResponse geminiAnalyze(Long transcriptId, Long userId) {
+    public GeminiAnalyzeResponse geminiAnalyze(String transcriptId, Long userId) {
         MeetingTranscript transcript = transcriptRepository.findById(transcriptId)
                 .orElseThrow(() -> new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId));
 
-        Meeting meeting = transcript.getMeeting();
+        Meeting meeting = meetingRepository.findById(transcript.getMeetingId())
+                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다."));
         if (!meeting.getCreatedBy().equals(userId)) {
             throw new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId);
         }
 
-        // DB에서 segments 로드해서 AssemblyAI 결과 복원
-        List<TranscriptSegment> segments = segmentRepository.findByTranscriptIdOrderBySequence(transcriptId);
-        List<AssemblyAiTranscriptResult.Utterance> utterances = segments.stream()
+        List<AssemblyAiTranscriptResult.Utterance> utterances = transcript.getSegments().stream()
                 .map(s -> new AssemblyAiTranscriptResult.Utterance(
                         s.getSpeakerLabel(),
                         s.getContent(),
@@ -128,9 +122,7 @@ public class MeetingAnalysisService {
                 .collect(Collectors.toList());
         AssemblyAiTranscriptResult stt = new AssemblyAiTranscriptResult(transcript.getFullText(), utterances);
 
-        // 화자 매핑 로드
-        List<SpeakerMapping> mappings = speakerMappingRepository.findByTranscriptId(transcriptId);
-        List<GeminiAnalysisResult.SpeakerInfo> speakerInfos = mappings.stream()
+        List<GeminiAnalysisResult.SpeakerInfo> speakerInfos = transcript.getSpeakerMappings().stream()
                 .filter(m -> m.getUserName() != null)
                 .map(m -> new GeminiAnalysisResult.SpeakerInfo(m.getSpeakerLabel(), m.getUserId(), m.getUserName()))
                 .collect(Collectors.toList());
@@ -142,14 +134,9 @@ public class MeetingAnalysisService {
                 normalizeText(meeting.getTitle())
         );
 
-        // transcript 업데이트 (요약, 키워드)
         transcript.setSummary(normalizeText(analysis.getSummary()));
         transcript.setAnalyzedAt(LocalDateTime.now());
-        try {
-            transcript.setKeywords(objectMapper.writeValueAsString(normalizeKeywords(analysis.getKeywords())));
-        } catch (Exception e) {
-            transcript.setKeywords("[]");
-        }
+        transcript.setKeywords(normalizeKeywords(analysis.getKeywords()));
 
         List<GeminiAnalysisResult.ExtractedTask> filteredTasks = filterTasks(analysis.getTasks());
         List<GeminiAnalysisResult.ExtractedEvent> filteredEvents = filterEvents(analysis.getEvents());
@@ -158,9 +145,12 @@ public class MeetingAnalysisService {
         saveTasks(meeting.getId(), meeting.getWorkspaceId(), filteredTasks);
         saveEvents(meeting.getId(), meeting.getWorkspaceId(), filteredEvents);
 
-        if (transcript.getRecording() != null) {
-            transcript.getRecording().setStatus(RecordingStatus.DONE);
+        if (transcript.getRecordingId() != null) {
+            recordingRepository.findById(transcript.getRecordingId())
+                    .ifPresent(r -> r.setStatus(RecordingStatus.DONE));
         }
+
+        transcriptRepository.save(transcript);
 
         return new GeminiAnalyzeResponse(
                 analysis.getSummary(),

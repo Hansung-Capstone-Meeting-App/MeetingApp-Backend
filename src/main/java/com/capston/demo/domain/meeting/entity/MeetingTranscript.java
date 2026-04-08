@@ -1,49 +1,58 @@
 package com.capston.demo.domain.meeting.entity;
 
-import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.mongodb.core.index.Indexed;
+import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
-@Entity
-@Table(name = "meeting_transcripts")
+@Document(collection = "meeting_transcripts")
 @Getter
 @Setter
 public class MeetingTranscript {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private Long id;
+    private String id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "meeting_id")
-    private Meeting meeting;
+    @Indexed
+    private Long meetingId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "recording_id")
-    private MeetingRecording recording;
+    private Long recordingId;
 
-    @Column(name = "full_text", columnDefinition = "LONGTEXT")
     private String fullText;
 
-    @Column(columnDefinition = "TEXT")
     private String summary;
 
-    // JSON 배열로 저장: ["예산", "마감일", ...]
-    @Column(columnDefinition = "JSON")
-    private String keywords;
+    private List<String> keywords = new ArrayList<>();
 
     private LocalDateTime analyzedAt;
 
-    @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
-    @OneToMany(mappedBy = "transcript", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<TranscriptSegment> segments = new ArrayList<>();
+    private List<SegmentEmbedded> segments = new ArrayList<>();
 
-    @OneToMany(mappedBy = "transcript", cascade = CascadeType.ALL, orphanRemoval = true)
-    private List<SpeakerMapping> speakerMappings = new ArrayList<>();
+    private List<SpeakerMappingEmbedded> speakerMappings = new ArrayList<>();
+
+    @Getter
+    @Setter
+    public static class SegmentEmbedded {
+        private String speakerLabel;
+        private Long userId;
+        private String content;
+        private Float startSec;
+        private Float endSec;
+        private Integer sequence;
+    }
+
+    @Getter
+    @Setter
+    public static class SpeakerMappingEmbedded {
+        private String speakerLabel;
+        private Long userId;
+        private String userName;
+    }
 }

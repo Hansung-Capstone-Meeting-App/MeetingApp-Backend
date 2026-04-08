@@ -100,7 +100,7 @@ public class MeetingController implements MeetingControllerDocs {
     // PUT /api/meetings/transcripts/{transcriptId}/speaker-mappings
     @PutMapping("/transcripts/{transcriptId}/speaker-mappings")
     public ResponseEntity<List<SpeakerMappingResponse>> saveSpeakerMappings(
-            @PathVariable Long transcriptId,
+            @PathVariable String transcriptId,
             @RequestBody SpeakerMappingRequest request) {
         return ResponseEntity.ok(transcriptService.saveSpeakerMappings(transcriptId, request));
     }
@@ -108,7 +108,7 @@ public class MeetingController implements MeetingControllerDocs {
     // 화자 매핑 목록 조회
     // GET /api/meetings/transcripts/{transcriptId}/speaker-mappings
     @GetMapping("/transcripts/{transcriptId}/speaker-mappings")
-    public ResponseEntity<List<SpeakerMappingResponse>> getSpeakerMappings(@PathVariable Long transcriptId) {
+    public ResponseEntity<List<SpeakerMappingResponse>> getSpeakerMappings(@PathVariable String transcriptId) {
         return ResponseEntity.ok(transcriptService.getSpeakerMappings(transcriptId));
     }
 }

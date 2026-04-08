@@ -193,7 +193,7 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "트랜스크립트를 찾을 수 없음")
             }
     )
-    ResponseEntity<List<SpeakerMappingResponse>> saveSpeakerMappings(Long transcriptId, SpeakerMappingRequest request);
+    ResponseEntity<List<SpeakerMappingResponse>> saveSpeakerMappings(String transcriptId, SpeakerMappingRequest request);
 
     @Operation(
             summary = "화자 매핑 목록 조회",
@@ -205,5 +205,5 @@ public interface MeetingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "트랜스크립트를 찾을 수 없음")
             }
     )
-    ResponseEntity<List<SpeakerMappingResponse>> getSpeakerMappings(Long transcriptId);
+    ResponseEntity<List<SpeakerMappingResponse>> getSpeakerMappings(String transcriptId);
 }

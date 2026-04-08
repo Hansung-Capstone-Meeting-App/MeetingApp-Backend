@@ -7,7 +7,7 @@ import java.util.List;
 @Getter
 @AllArgsConstructor
 public class TranscribeResponse {
-    private Long transcriptId;
+    private String transcriptId;
     private List<SegmentInfo> segments;
 
     @Getter

@@ -46,6 +46,9 @@ dependencies {
     // AWS SDK v2
     implementation platform('software.amazon.awssdk:bom:2.25.60')
     implementation 'software.amazon.awssdk:s3'
+
+    //mongoDB
+    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 }
 
 tasks.named('test') {

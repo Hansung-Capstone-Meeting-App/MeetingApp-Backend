@@ -4,59 +4,43 @@ import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
 import com.capston.demo.domain.meeting.dto.response.SpeakerMappingResponse;
 import com.capston.demo.domain.meeting.dto.response.TranscriptResponse;
-import com.capston.demo.domain.meeting.entity.Meeting;
-import com.capston.demo.domain.meeting.entity.MeetingRecording;
 import com.capston.demo.domain.meeting.entity.MeetingTranscript;
-import com.capston.demo.domain.meeting.entity.SpeakerMapping;
-import com.capston.demo.domain.meeting.entity.TranscriptSegment;
-import com.capston.demo.domain.meeting.repository.MeetingRecordingRepository;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
-import com.capston.demo.domain.meeting.repository.MeetingTranscriptRepository;
-import com.capston.demo.domain.meeting.repository.SpeakerMappingRepository;
-import com.capston.demo.domain.meeting.repository.TranscriptSegmentRepository;
+import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoRepository;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.Collectors;
-import lombok.RequiredArgsConstructor;
-import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
 public class MeetingTranscriptService {
 
     private final MeetingRepository meetingRepository;
-    private final MeetingRecordingRepository recordingRepository;
-    private final MeetingTranscriptRepository transcriptRepository;
-    private final TranscriptSegmentRepository segmentRepository;
-    private final SpeakerMappingRepository speakerMappingRepository;
+    private final MeetingTranscriptMongoRepository transcriptRepository;
 
-    @Transactional
     public TranscriptResponse saveTranscript(Long meetingId, TranscriptRequest request) {
-        Meeting meeting = meetingRepository.findById(meetingId)
-                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
-
         MeetingTranscript transcript = new MeetingTranscript();
-        transcript.setMeeting(meeting);
+        transcript.setMeetingId(meetingId);
         transcript.setFullText(request.getFullText());
         transcript.setSummary(request.getSummary());
-        transcript.setKeywords(request.getKeywords());
         transcript.setAnalyzedAt(LocalDateTime.now());
 
         if (request.getRecordingId() != null) {
-            MeetingRecording recording = recordingRepository.findById(request.getRecordingId())
-                    .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + request.getRecordingId()));
-            transcript.setRecording(recording);
+            transcript.setRecordingId(request.getRecordingId());
         }
 
-        MeetingTranscript saved = transcriptRepository.save(transcript);
+        if (request.getKeywords() != null) {
+            transcript.setKeywords(parseKeywords(request.getKeywords()));
+        }
 
         if (request.getSegments() != null) {
-            List<TranscriptSegment> segments = new ArrayList<>();
+            List<MeetingTranscript.SegmentEmbedded> segments = new ArrayList<>();
             for (TranscriptRequest.SegmentRequest segReq : request.getSegments()) {
-                TranscriptSegment segment = new TranscriptSegment();
-                segment.setTranscript(saved);
+                MeetingTranscript.SegmentEmbedded segment = new MeetingTranscript.SegmentEmbedded();
                 segment.setSpeakerLabel(segReq.getSpeakerLabel());
                 segment.setUserId(segReq.getUserId());
                 segment.setContent(segReq.getContent());
@@ -65,14 +49,12 @@ public class MeetingTranscriptService {
                 segment.setSequence(segReq.getSequence());
                 segments.add(segment);
             }
-            segmentRepository.saveAll(segments);
-            saved.setSegments(segments);
+            transcript.setSegments(segments);
         }
 
-        return new TranscriptResponse(saved);
+        return new TranscriptResponse(transcriptRepository.save(transcript));
     }
 
-    @Transactional(readOnly = true)
     public TranscriptResponse getTranscript(Long meetingId, Long userId) {
         meetingRepository.findByIdAndCreatedBy(meetingId, userId)
                 .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
@@ -82,37 +64,54 @@ public class MeetingTranscriptService {
         return new TranscriptResponse(transcript);
     }
 
-    @Transactional
-    public List<SpeakerMappingResponse> saveSpeakerMappings(Long transcriptId, SpeakerMappingRequest request) {
+    public List<SpeakerMappingResponse> saveSpeakerMappings(String transcriptId, SpeakerMappingRequest request) {
         MeetingTranscript transcript = transcriptRepository.findById(transcriptId)
                 .orElseThrow(() -> new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId));
 
-        List<SpeakerMapping> result = new ArrayList<>();
-
         for (SpeakerMappingRequest.MappingItem item : request.getMappings()) {
-            SpeakerMapping mapping = speakerMappingRepository
-                    .findByTranscriptIdAndSpeakerLabel(transcriptId, item.getSpeakerLabel())
-                    .orElseGet(() -> {
-                        SpeakerMapping newMapping = new SpeakerMapping();
-                        newMapping.setTranscript(transcript);
-                        newMapping.setSpeakerLabel(item.getSpeakerLabel());
-                        return newMapping;
-                    });
+            MeetingTranscript.SpeakerMappingEmbedded existing = transcript.getSpeakerMappings().stream()
+                    .filter(m -> m.getSpeakerLabel().equals(item.getSpeakerLabel()))
+                    .findFirst()
+                    .orElse(null);
 
-            mapping.setUserName(item.getUserName());
-            mapping.setUserId(item.getUserId());
-            result.add(speakerMappingRepository.save(mapping));
+            if (existing != null) {
+                existing.setUserId(item.getUserId());
+                existing.setUserName(item.getUserName());
+            } else {
+                MeetingTranscript.SpeakerMappingEmbedded mapping = new MeetingTranscript.SpeakerMappingEmbedded();
+                mapping.setSpeakerLabel(item.getSpeakerLabel());
+                mapping.setUserId(item.getUserId());
+                mapping.setUserName(item.getUserName());
+                transcript.getSpeakerMappings().add(mapping);
+            }
         }
 
-        return result.stream()
-                .map(SpeakerMappingResponse::new)
+        transcriptRepository.save(transcript);
+
+        return transcript.getSpeakerMappings().stream()
+                .map(m -> new SpeakerMappingResponse(transcriptId, m))
                 .collect(Collectors.toList());
     }
 
-    @Transactional(readOnly = true)
-    public List<SpeakerMappingResponse> getSpeakerMappings(Long transcriptId) {
-        return speakerMappingRepository.findByTranscriptId(transcriptId).stream()
-                .map(SpeakerMappingResponse::new)
+    public List<SpeakerMappingResponse> getSpeakerMappings(String transcriptId) {
+        MeetingTranscript transcript = transcriptRepository.findById(transcriptId)
+                .orElseThrow(() -> new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId));
+        return transcript.getSpeakerMappings().stream()
+                .map(m -> new SpeakerMappingResponse(transcriptId, m))
+                .collect(Collectors.toList());
+    }
+
+    // TranscriptRequest.keywords가 JSON 문자열 형태로 올 경우 파싱
+    private List<String> parseKeywords(String keywords) {
+        if (keywords == null || keywords.isBlank()) return new ArrayList<>();
+        String trimmed = keywords.trim();
+        if (trimmed.startsWith("[")) {
+            trimmed = trimmed.replaceAll("^\\[|\\]$", "");
+        }
+        if (trimmed.isBlank()) return new ArrayList<>();
+        return List.of(trimmed.split(",")).stream()
+                .map(s -> s.trim().replaceAll("^\"|\"$", ""))
+                .filter(s -> !s.isBlank())
                 .collect(Collectors.toList());
     }
 }

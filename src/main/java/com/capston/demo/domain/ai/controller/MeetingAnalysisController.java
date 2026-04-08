@@ -36,7 +36,7 @@ public class MeetingAnalysisController {
     @PostMapping("/transcripts/{transcriptId}/gemini-analyze")
     public ResponseEntity<GeminiAnalyzeResponse> geminiAnalyze(
             @AuthenticationPrincipal CustomUserDetails userDetails,
-            @PathVariable Long transcriptId) {
+            @PathVariable String transcriptId) {
         return ResponseEntity.ok(analysisService.geminiAnalyze(transcriptId, userDetails.getUserId()));
     }
 }
