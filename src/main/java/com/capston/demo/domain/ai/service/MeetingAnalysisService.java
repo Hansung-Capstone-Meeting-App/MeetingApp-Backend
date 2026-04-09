@@ -142,8 +142,8 @@ public class MeetingAnalysisService {
         List<GeminiAnalysisResult.ExtractedEvent> filteredEvents = filterEvents(analysis.getEvents());
         logExtractedEvents(meeting.getId(), filteredEvents);
 
-        saveTasks(meeting.getId(), meeting.getWorkspaceId(), filteredTasks);
-        saveEvents(meeting.getId(), meeting.getWorkspaceId(), filteredEvents);
+        saveTasks(meeting.getId(), filteredTasks);
+        saveEvents(meeting.getId(), filteredEvents);
 
         if (transcript.getRecordingId() != null) {
             recordingRepository.findById(transcript.getRecordingId())
@@ -162,11 +162,10 @@ public class MeetingAnalysisService {
 
     // ── private helpers ────────────────────────────────────────────────────────
 
-    private void saveTasks(Long meetingId, Long workspaceId, List<GeminiAnalysisResult.ExtractedTask> tasks) {
+    private void saveTasks(Long meetingId, List<GeminiAnalysisResult.ExtractedTask> tasks) {
         for (GeminiAnalysisResult.ExtractedTask extractedTask : tasks) {
             Task task = new Task();
             task.setMeetingId(meetingId);
-            task.setWorkspaceId(workspaceId);
             task.setAssigneeName(extractedTask.getAssigneeName());
             task.setTitle(extractedTask.getTitle());
             task.setDescription(normalizeText(extractedTask.getDescription()));
@@ -185,7 +184,7 @@ public class MeetingAnalysisService {
         }
     }
 
-    private void saveEvents(Long meetingId, Long workspaceId, List<GeminiAnalysisResult.ExtractedEvent> events) {
+    private void saveEvents(Long meetingId, List<GeminiAnalysisResult.ExtractedEvent> events) {
         for (GeminiAnalysisResult.ExtractedEvent extractedEvent : events) {
             LocalDateTime startAt;
             LocalDateTime endAt;
@@ -207,7 +206,6 @@ public class MeetingAnalysisService {
 
             Event event = new Event();
             event.setMeetingId(meetingId);
-            event.setWorkspaceId(workspaceId);
             event.setCreatedBy(extractedEvent.getUserId());
             event.setCreatedByName(extractedEvent.getCreatedByName());
             event.setTitle(extractedEvent.getTitle());
@@ -286,7 +284,6 @@ public class MeetingAnalysisService {
     }
 
     private LocalDate resolveMeetingDate(Meeting meeting) {
-        if (meeting.getStartedAt() != null) return meeting.getStartedAt().toLocalDate();
         if (meeting.getCreatedAt() != null) return meeting.getCreatedAt().toLocalDate();
         return LocalDate.now();
     }

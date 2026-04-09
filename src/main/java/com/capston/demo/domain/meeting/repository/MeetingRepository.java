@@ -10,11 +10,5 @@ public interface MeetingRepository extends JpaRepository<Meeting, Long> {
 
     Optional<Meeting> findByIdAndCreatedBy(Long id, Long createdBy);
 
-    List<Meeting> findByWorkspaceIdAndCreatedByOrderByCreatedAtDesc(Long workspaceId, Long createdBy);
-
-    List<Meeting> findByChannelIdAndCreatedByOrderByCreatedAtDesc(Long channelId, Long createdBy);
-
-    List<Meeting> findByWorkspaceIdAndChannelIdAndCreatedByOrderByCreatedAtDesc(Long workspaceId, Long channelId, Long createdBy);
-
     List<Meeting> findByCreatedByOrderByCreatedAtDesc(Long createdBy);
 }

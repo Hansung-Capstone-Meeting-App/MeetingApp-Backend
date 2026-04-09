@@ -47,6 +47,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/user/register", "/api/user/presigned-url").permitAll()
                         // OAuth2 API (공개)
                         .requestMatchers("/api/oauth2/**").permitAll()
+                        // Slack 이벤트 (공개 — Slack 서버에서 호출)
+                        .requestMatchers("/slack/events").permitAll()
                         // 나머지는 인증 필요
                         .anyRequest().authenticated()
         );

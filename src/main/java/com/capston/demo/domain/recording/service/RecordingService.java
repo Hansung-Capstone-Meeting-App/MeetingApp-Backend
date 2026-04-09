@@ -77,6 +77,35 @@ public class RecordingService {
         return new RecordingResponse(recordingRepository.save(recording));
     }
 
+    // ── Slack 등 내부에서 InputStream으로 직접 업로드 ─────────────────────────
+
+    @Transactional
+    public RecordingResponse uploadFromStream(Long meetingId, java.io.InputStream inputStream,
+                                              long fileSize, String filename) throws IOException {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
+
+        String s3Key = s3Util.generateKey(meetingId, filename);
+
+        s3Client.putObject(
+                PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(s3Key)
+                        .contentLength(fileSize)
+                        .build(),
+                RequestBody.fromInputStream(inputStream, fileSize)
+        );
+
+        MeetingRecording recording = new MeetingRecording();
+        recording.setMeeting(meeting);
+        recording.setS3Bucket(bucket);
+        recording.setS3Key(s3Key);
+        recording.setFileSize(fileSize);
+        recording.setStatus(RecordingStatus.UPLOADED);
+
+        return new RecordingResponse(recordingRepository.save(recording));
+    }
+
     // ── 목록 조회 ──────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)

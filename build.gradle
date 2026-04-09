@@ -49,6 +49,11 @@ dependencies {
 
     //mongoDB
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
+
+    // Slack
+    implementation 'com.slack.api:bolt:1.40.2'
+    implementation 'com.slack.api:bolt-servlet:1.40.2'
+    implementation 'com.slack.api:slack-api-client:1.40.2'
 }
 
 tasks.named('test') {

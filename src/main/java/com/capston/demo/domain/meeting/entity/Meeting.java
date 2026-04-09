@@ -18,16 +18,8 @@ public class Meeting {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Long workspaceId;
-
-    private Long channelId;
-
     @Column(length = 500)
     private String title;
-
-    private LocalDateTime startedAt;
-
-    private LocalDateTime endedAt;
 
     private Long createdBy;
 

@@ -46,6 +46,9 @@ public class User {
     @Column(name = "oauth_linked_at")
     private LocalDateTime oauthLinkedAt;
 
+    @Column(name = "slack_user_id", length = 50)
+    private String slackUserId;
+
     public enum UserStatus {
         online, offline, busy, away, deleted
     }
