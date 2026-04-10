@@ -54,5 +54,6 @@ public class MeetingTranscript {
         private String speakerLabel;
         private Long userId;
         private String userName;
+        private String slackUserId;
     }
 }

@@ -41,8 +41,9 @@ public class SlackEventController {
             if ("file_shared".equals(eventType)) {
                 String fileId = event.path("file_id").asText();
                 String userId = event.path("user_id").asText();
-                log.info("file_shared 이벤트 수신. fileId={}, userId={}", fileId, userId);
-                slackService.handleFileShared(fileId, userId);
+                String channelId = event.path("channel_id").asText();
+                log.info("file_shared 이벤트 수신. fileId={}, userId={}, channelId={}", fileId, userId, channelId);
+                slackService.handleFileShared(fileId, userId, channelId);
             } else {
                 log.info("처리하지 않는 이벤트 타입. type={}", eventType);
             }
