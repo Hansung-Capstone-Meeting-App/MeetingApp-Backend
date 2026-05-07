@@ -9,12 +9,14 @@ import java.time.LocalDateTime;
 public class MeetingResponse {
 
     private final Long id;
+    private final Long workspaceId;
     private final String title;
     private final Long createdBy;
     private final LocalDateTime createdAt;
 
     public MeetingResponse(Meeting meeting) {
         this.id = meeting.getId();
+        this.workspaceId = meeting.getWorkspaceId();
         this.title = meeting.getTitle();
         this.createdBy = meeting.getCreatedBy();
         this.createdAt = meeting.getCreatedAt();

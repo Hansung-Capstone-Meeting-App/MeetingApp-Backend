@@ -30,6 +30,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -56,13 +58,13 @@ public class MeetingAnalysisService {
     @Transactional
     public TranscribeResponse transcribe(Long meetingId, Long recordingId, Long userId) {
         Meeting meeting = meetingRepository.findById(meetingId)
-                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
         if (!meeting.getCreatedBy().equals(userId)) {
-            throw new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId);
+            throw new BusinessException(ErrorCode.MEETING_NOT_FOUND);
         }
 
         MeetingRecording recording = recordingRepository.findById(recordingId)
-                .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
 
         recording.setStatus(RecordingStatus.PROCESSING);
 
@@ -104,12 +106,12 @@ public class MeetingAnalysisService {
     @Transactional
     public GeminiAnalyzeResponse geminiAnalyze(String transcriptId, Long userId) {
         MeetingTranscript transcript = transcriptRepository.findById(transcriptId)
-                .orElseThrow(() -> new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TRANSCRIPT_NOT_FOUND));
 
         Meeting meeting = meetingRepository.findById(transcript.getMeetingId())
-                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다."));
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
         if (!meeting.getCreatedBy().equals(userId)) {
-            throw new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId);
+            throw new BusinessException(ErrorCode.TRANSCRIPT_NOT_FOUND);
         }
 
         List<AssemblyAiTranscriptResult.Utterance> utterances = transcript.getSegments().stream()

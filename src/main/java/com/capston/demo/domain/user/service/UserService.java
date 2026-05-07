@@ -9,7 +9,8 @@ import com.capston.demo.domain.user.dto.request.ChangePasswordRequestDto;
 import com.capston.demo.domain.user.dto.response.RegisterResponseDto;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.repository.UserRepository;
-import com.capston.demo.global.exception.DuplicateEmailException;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import org.springframework.security.authentication.BadCredentialsException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -27,7 +28,7 @@ public class UserService {
     public RegisterResponseDto registerUser(RegisterRequestDto requestDto) {
         // 중복 이메일 체크
         if (userRepository.findByEmail(requestDto.getEmail()).isPresent()) {
-            throw new DuplicateEmailException("이미 사용 중인 이메일입니다");
+            throw new BusinessException(ErrorCode.DUPLICATE_EMAIL);
         }
 
         // User 엔티티 생성
@@ -57,7 +58,7 @@ public class UserService {
     @Transactional(readOnly = true)
     public UserProfileDto getUserProfile(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         return UserProfileDto.builder()
                 .id(user.getId())
@@ -78,7 +79,7 @@ public class UserService {
     @Transactional
     public void updateUserName(Long userId, UpdateUserNameRequestDto requestDto) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         user.setName(requestDto.getName());
     }
@@ -89,7 +90,7 @@ public class UserService {
     @Transactional
     public void updateProfileImage(Long userId, UpdateProfileImageRequestDto requestDto) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         user.setProfileImg(requestDto.getProfileImageUrl());
     }
@@ -100,7 +101,7 @@ public class UserService {
     @Transactional
     public void deleteAccount(Long userId) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         user.setStatus(User.UserStatus.deleted);
     }
@@ -111,7 +112,7 @@ public class UserService {
     @Transactional
     public void changePassword(Long userId, ChangePasswordRequestDto requestDto) {
         User user = userRepository.findById(userId)
-                .orElseThrow(() -> new IllegalArgumentException("사용자를 찾을 수 없습니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         // 현재 비밀번호 검증
         if (!passwordEncoder.matches(requestDto.getCurrentPassword(), user.getPassword())) {

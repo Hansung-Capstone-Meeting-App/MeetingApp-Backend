@@ -7,6 +7,6 @@ import lombok.Setter;
 @Setter
 public class MeetingRequest {
 
-    /** meetings.title - 회의 제목 */
+    private Long workspaceId;
     private String title;
 }

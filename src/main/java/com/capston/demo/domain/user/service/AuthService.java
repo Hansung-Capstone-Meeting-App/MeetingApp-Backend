@@ -8,8 +8,8 @@ import com.capston.demo.domain.user.entity.RefreshToken;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.repository.RefreshTokenRepository;
 import com.capston.demo.domain.user.repository.UserRepository;
-import com.capston.demo.global.exception.ExpiredTokenException;
-import com.capston.demo.global.exception.InvalidTokenException;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import com.capston.demo.global.util.JwtUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -95,18 +95,18 @@ public class AuthService {
     public RefreshTokenResponseDto refreshAccessToken(String refreshToken) {
         // DB에서 Refresh Token 조회
         RefreshToken storedToken = refreshTokenRepository.findByToken(refreshToken)
-                .orElseThrow(() -> new InvalidTokenException("유효하지 않은 리프레시 토큰입니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_TOKEN));
 
         // 토큰 만료 확인
         if (storedToken.isExpired()) {
             // 만료된 토큰은 DB에서 삭제
             refreshTokenRepository.delete(storedToken);
-            throw new ExpiredTokenException("만료된 리프레시 토큰입니다");
+            throw new BusinessException(ErrorCode.EXPIRED_TOKEN);
         }
 
         // JWT 토큰 검증
         if (!jwtUtil.validateToken(refreshToken)) {
-            throw new InvalidTokenException("유효하지 않은 리프레시 토큰입니다");
+            throw new BusinessException(ErrorCode.INVALID_TOKEN);
         }
 
         // 토큰에서 사용자 정보 추출
@@ -115,7 +115,7 @@ public class AuthService {
 
         // 사용자 존재 확인
         userRepository.findByEmail(email)
-                .orElseThrow(() -> new InvalidTokenException("존재하지 않는 사용자입니다"));
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         // 새로운 액세스 토큰 생성
         String newAccessToken = jwtUtil.generateAccessToken(email, userId, jwtUtil.extractName(refreshToken));

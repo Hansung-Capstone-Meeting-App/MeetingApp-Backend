@@ -7,6 +7,8 @@ import com.capston.demo.domain.meeting.dto.response.TranscriptResponse;
 import com.capston.demo.domain.meeting.entity.MeetingTranscript;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
 import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoRepository;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -57,16 +59,16 @@ public class MeetingTranscriptService {
 
     public TranscriptResponse getTranscript(Long meetingId, Long userId) {
         meetingRepository.findByIdAndCreatedBy(meetingId, userId)
-                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
         MeetingTranscript transcript = transcriptRepository.findByMeetingIdOrderByCreatedAtDesc(meetingId).stream()
                 .findFirst()
-                .orElseThrow(() -> new IllegalArgumentException("트랜스크립트가 없습니다. meetingId=" + meetingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TRANSCRIPT_NOT_FOUND));
         return new TranscriptResponse(transcript);
     }
 
     public List<SpeakerMappingResponse> saveSpeakerMappings(String transcriptId, SpeakerMappingRequest request) {
         MeetingTranscript transcript = transcriptRepository.findById(transcriptId)
-                .orElseThrow(() -> new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TRANSCRIPT_NOT_FOUND));
 
         for (SpeakerMappingRequest.MappingItem item : request.getMappings()) {
             MeetingTranscript.SpeakerMappingEmbedded existing = transcript.getSpeakerMappings().stream()
@@ -95,7 +97,7 @@ public class MeetingTranscriptService {
 
     public List<SpeakerMappingResponse> getSpeakerMappings(String transcriptId) {
         MeetingTranscript transcript = transcriptRepository.findById(transcriptId)
-                .orElseThrow(() -> new IllegalArgumentException("트랜스크립트를 찾을 수 없습니다. id=" + transcriptId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.TRANSCRIPT_NOT_FOUND));
         return transcript.getSpeakerMappings().stream()
                 .map(m -> new SpeakerMappingResponse(transcriptId, m))
                 .collect(Collectors.toList());

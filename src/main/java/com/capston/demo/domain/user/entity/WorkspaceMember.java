@@ -33,10 +33,16 @@ public class WorkspaceMember {
         owner, admin, member
     }
 
-    /** 테스트/개발용: 워크스페이스와 유저로 멤버 생성 (워크스페이스는 이미 저장된 상태여야 함) */
     public WorkspaceMember(Workspace workspace, User user) {
         this.id = new WorkspaceMemberId(workspace.getId(), user.getId());
         this.workspace = workspace;
         this.user = user;
+    }
+
+    public WorkspaceMember(Workspace workspace, User user, MemberRole role) {
+        this.id = new WorkspaceMemberId(workspace.getId(), user.getId());
+        this.workspace = workspace;
+        this.user = user;
+        this.role = role;
     }
 }

@@ -4,7 +4,8 @@ import com.capston.demo.domain.user.dto.OAuthUserInfo;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.entity.UserNotionAccount;
 import com.capston.demo.domain.user.repository.UserNotionAccountRepository;
-import com.capston.demo.global.exception.OAuthAuthenticationException;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -100,21 +101,12 @@ public class NotionOAuth2Service {
                     }
                 }
 
-                throw new OAuthAuthenticationException(
-                        "Failed to exchange code for token",
-                        "notion",
-                        "TOKEN_EXCHANGE_FAILED"
-                );
-            } catch (OAuthAuthenticationException e) {
+                throw new BusinessException(ErrorCode.OAUTH_TOKEN_EXCHANGE_FAILED);
+            } catch (BusinessException e) {
                 throw e;
             } catch (Exception e) {
                 log.error("Notion token exchange error: {}", e.getMessage());
-                throw new OAuthAuthenticationException(
-                        "Failed to exchange code for token: " + e.getMessage(),
-                        "notion",
-                        "TOKEN_EXCHANGE_ERROR",
-                        e
-                );
+                throw new BusinessException(ErrorCode.OAUTH_TOKEN_EXCHANGE_FAILED, e);
             }
         });
     }
@@ -158,21 +150,12 @@ public class NotionOAuth2Service {
                             .build(); //OAuthUserInfo 객체 생성
                 }
 
-                throw new OAuthAuthenticationException(
-                        "Failed to get user info",
-                        "notion",
-                        "USER_INFO_FAILED"
-                );
-            } catch (OAuthAuthenticationException e) {
+                throw new BusinessException(ErrorCode.OAUTH_USER_INFO_FAILED);
+            } catch (BusinessException e) {
                 throw e;
             } catch (Exception e) {
                 log.error("Notion user info error: {}", e.getMessage());
-                throw new OAuthAuthenticationException(
-                        "Failed to get user info: " + e.getMessage(),
-                        "notion",
-                        "USER_INFO_ERROR",
-                        e
-                );
+                throw new BusinessException(ErrorCode.OAUTH_USER_INFO_FAILED, e);
             }
         });
     }

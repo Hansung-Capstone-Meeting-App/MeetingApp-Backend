@@ -59,7 +59,9 @@ public class AssemblyAiService {
             throw new RuntimeException("[AssemblyAI] submit failed: missing transcript id");
         }
 
-        return res.get("id").asText();
+        String transcriptId = res.get("id").asText();
+        log.info("[AssemblyAI] 전사 요청 완료. id={}", transcriptId);
+        return transcriptId;
     }
 
     private JsonNode pollUntilCompleted(WebClient client, String id) {
@@ -101,6 +103,9 @@ public class AssemblyAiService {
                     u.path("end").asLong() / 1000.0
             ));
         }
+
+        long distinctSpeakers = utterances.stream().map(AssemblyAiTranscriptResult.Utterance::getSpeaker).distinct().count();
+        log.info("[AssemblyAI] 파싱 완료. utterances={}, distinctSpeakers={}", utterances.size(), distinctSpeakers);
 
         return new AssemblyAiTranscriptResult(fullText, utterances);
     }

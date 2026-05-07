@@ -1,7 +1,8 @@
 package com.capston.demo.domain.user.service;
 
 import com.capston.demo.domain.user.dto.OAuthUserInfo;
-import com.capston.demo.global.exception.OAuthAuthenticationException;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -98,21 +99,12 @@ public class GoogleOAuth2Service {
                     return (String) response.getBody().get("access_token");
                 }
 
-                throw new OAuthAuthenticationException(
-                        "Failed to exchange code for token",
-                        "google",
-                        "TOKEN_EXCHANGE_FAILED"
-                );
-            } catch (OAuthAuthenticationException e) {
+                throw new BusinessException(ErrorCode.OAUTH_TOKEN_EXCHANGE_FAILED);
+            } catch (BusinessException e) {
                 throw e;
             } catch (Exception e) {
                 log.error("Error exchanging code for token: {}", e.getMessage());
-                throw new OAuthAuthenticationException(
-                        "Failed to exchange code for token: " + e.getMessage(),
-                        "google",
-                        "TOKEN_EXCHANGE_ERROR",
-                        e
-                );
+                throw new BusinessException(ErrorCode.OAUTH_TOKEN_EXCHANGE_FAILED, e);
             }
         });
     }
@@ -142,21 +134,12 @@ public class GoogleOAuth2Service {
                             .build();
                 }
 
-                throw new OAuthAuthenticationException(
-                        "Failed to get user info",
-                        "google",
-                        "USER_INFO_FAILED"
-                );
-            } catch (OAuthAuthenticationException e) {
+                throw new BusinessException(ErrorCode.OAUTH_USER_INFO_FAILED);
+            } catch (BusinessException e) {
                 throw e;
             } catch (Exception e) {
                 log.error("Error getting user info: {}", e.getMessage());
-                throw new OAuthAuthenticationException(
-                        "Failed to get user info: " + e.getMessage(),
-                        "google",
-                        "USER_INFO_ERROR",
-                        e
-                );
+                throw new BusinessException(ErrorCode.OAUTH_USER_INFO_FAILED, e);
             }
         });
     }

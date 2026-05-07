@@ -3,6 +3,8 @@ package com.capston.demo.domain.slack.service;
 import com.capston.demo.domain.ai.dto.response.GeminiAnalyzeResponse;
 import com.capston.demo.domain.ai.dto.response.TranscribeResponse;
 import com.capston.demo.domain.ai.service.MeetingAnalysisService;
+import com.capston.demo.domain.calender.entity.Task;
+import com.capston.demo.domain.calender.repository.TaskRepository;
 import com.capston.demo.domain.meeting.entity.Meeting;
 import com.capston.demo.domain.meeting.entity.MeetingTranscript;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
@@ -33,7 +35,9 @@ import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -48,6 +52,7 @@ public class SlackService {
     private final RecordingService recordingService;
     private final MeetingAnalysisService meetingAnalysisService;
     private final MeetingTranscriptMongoRepository transcriptRepository;
+    private final TaskRepository taskRepository;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${slack.bot-token}")
@@ -140,8 +145,12 @@ public class SlackService {
                     transcriptId, user.getId(), channelId, meeting.getTitle(), speakerLabels
             ));
 
-            // 10. 채널에 화자 매핑 버튼 메시지 게시
-            postMappingButtonMessage(methods, channelId, meeting.getTitle(), transcriptId, speakerLabels);
+            // 10. 전체 전사 결과를 마크다운 파일로 채널에 업로드
+            uploadTranscriptMarkdown(methods, channelId, meeting.getTitle(), transcribeResponse.getSegments());
+
+            // 11. 채널에 화자 매핑 버튼 메시지 게시
+            postMappingButtonMessage(methods, channelId, meeting.getTitle(), transcriptId,
+                    speakerLabels, transcribeResponse.getSegments());
 
         } catch (Exception e) {
             log.error("Slack 파일 처리 중 오류 발생. fileId={}, userId={}", slackFileId, slackUserId, e);
@@ -266,8 +275,16 @@ public class SlackService {
                     transcriptId, pending.getUserId()
             );
 
-            // 3. 결과 채널 게시
-            postToChannel(methods, pending.getChannelId(), pending.getMeetingTitle(), analyzeResponse);
+            // 3. 분석으로 저장된 태스크 조회
+            List<Task> tasks = taskRepository.findByMeetingId(transcript.getMeetingId());
+
+            // 4. 매핑 적용된 전체 전사 결과를 마크다운 파일로 업로드
+            uploadMappedTranscriptMarkdown(methods, pending.getChannelId(), pending.getMeetingTitle(),
+                    transcript, analyzeResponse, tasks);
+
+            // 5. 요약 메시지 채널 게시 (이름 기반)
+            postToChannel(methods, pending.getChannelId(), pending.getMeetingTitle(),
+                    analyzeResponse, tasks, transcript.getSpeakerMappings());
 
         } catch (Exception e) {
             log.error("화자 매핑 처리 중 오류. transcriptId={}", transcriptId, e);
@@ -322,50 +339,180 @@ public class SlackService {
 
     private void postMappingButtonMessage(MethodsClient methods, String channelId,
                                           String meetingTitle, String transcriptId,
-                                          List<String> speakerLabels) {
+                                          List<String> speakerLabels,
+                                          List<TranscribeResponse.SegmentInfo> segments) {
         try {
-            String speakerList = String.join(", ", speakerLabels);
-            List<LayoutBlock> blocks = List.of(
-                Blocks.section(s -> s.text(BlockCompositions.markdownText(
-                    String.format("*STT 완료!* _%s_\n감지된 화자: %s\n화자를 워크스페이스 멤버와 매핑해주세요.", meetingTitle, speakerList)
-                ))),
-                Blocks.actions(a -> a
+            List<LayoutBlock> blocks = new ArrayList<>();
+
+            // 헤더
+            blocks.add(Blocks.section(s -> s.text(BlockCompositions.markdownText(
+                    String.format("*STT 완료!* _%s_\n화자를 워크스페이스 멤버와 매핑해주세요.", meetingTitle)))));
+            blocks.add(Blocks.divider());
+
+            // 화자별 발언 샘플 (각 섹션 블록으로 분리 → 3000자 제한 회피)
+            for (String label : speakerLabels) {
+                StringBuilder sb = new StringBuilder();
+                sb.append(String.format("*화자 %s*\n", label));
+                segments.stream()
+                        .filter(s -> label.equals(s.getSpeakerLabel()))
+                        .limit(3)
+                        .forEach(s -> sb.append(String.format("> [%s] %s\n",
+                                formatTime(s.getStartSec()), truncate(s.getContent(), 100))));
+                String labelText = sb.toString();
+                blocks.add(Blocks.section(s -> s.text(BlockCompositions.markdownText(labelText))));
+            }
+
+            blocks.add(Blocks.divider());
+            blocks.add(Blocks.actions(a -> a
                     .blockId("speaker_mapping_actions")
                     .elements(List.of(
-                        BlockElements.button(b -> b
-                            .text(BlockCompositions.plainText("화자 매핑하기"))
-                            .actionId("open_speaker_mapping")
-                            .value(transcriptId)
-                        )
+                            BlockElements.button(b -> b
+                                    .text(BlockCompositions.plainText("화자 매핑하기"))
+                                    .actionId("open_speaker_mapping")
+                                    .value(transcriptId)
+                            )
                     ))
-                )
-            );
-            methods.chatPostMessage(r -> r.channel(channelId).blocks(blocks));
+            ));
+
+            String fallbackText = String.format("STT 완료: %s — 화자 %d명 감지됨. 화자 매핑을 진행해주세요.",
+                    meetingTitle, speakerLabels.size());
+            methods.chatPostMessage(r -> r.channel(channelId).text(fallbackText).blocks(blocks));
         } catch (Exception e) {
             log.warn("화자 매핑 버튼 메시지 전송 실패. channelId={}", channelId, e);
         }
     }
 
-    private void postToChannel(MethodsClient methods, String channelId,
-                               String meetingTitle, GeminiAnalyzeResponse analysis) {
+    private void uploadMappedTranscriptMarkdown(MethodsClient methods, String channelId,
+                                               String meetingTitle, MeetingTranscript transcript,
+                                               GeminiAnalyzeResponse analysis, List<Task> tasks) {
         try {
-            String keywords = analysis.getKeywords() != null
-                    ? String.join(", ", analysis.getKeywords())
-                    : "없음";
+            // speakerLabel → 실제 이름 매핑표
+            Map<String, String> labelToName = transcript.getSpeakerMappings().stream()
+                    .collect(Collectors.toMap(
+                            MeetingTranscript.SpeakerMappingEmbedded::getSpeakerLabel,
+                            m -> m.getUserName() != null ? m.getUserName() : "화자 " + m.getSpeakerLabel(),
+                            (a, b) -> a
+                    ));
 
-            String message = String.format(
-                    "*[회의 분석 완료]* _%s_\n\n*요약*\n%s\n\n*키워드*: %s\n*생성된 태스크*: %d건 | *생성된 이벤트*: %d건",
-                    meetingTitle,
-                    analysis.getSummary(),
-                    keywords,
-                    analysis.getSavedTaskCount(),
-                    analysis.getSavedEventCount()
+            StringBuilder md = new StringBuilder();
+            md.append("# 회의 전사 결과 — ").append(meetingTitle).append("\n\n");
+
+            // 전체 전사 (실제 이름 적용)
+            for (MeetingTranscript.SegmentEmbedded seg : transcript.getSegments()) {
+                String name = labelToName.getOrDefault(seg.getSpeakerLabel(), "화자 " + seg.getSpeakerLabel());
+                String time = formatTime(seg.getStartSec() != null ? seg.getStartSec() : 0f);
+                md.append(String.format("[%s] %s: %s\n", time, name, seg.getContent()));
+            }
+
+            // 요약
+            md.append("\n---\n\n## 요약\n").append(analysis.getSummary()).append("\n");
+
+            // 할일 목록
+            if (!tasks.isEmpty()) {
+                md.append("\n## 할일 목록\n");
+                Map<String, List<Task>> byAssignee = new LinkedHashMap<>();
+                for (Task task : tasks) {
+                    String key = task.getAssigneeName() != null ? task.getAssigneeName() : "미정";
+                    byAssignee.computeIfAbsent(key, k -> new ArrayList<>()).add(task);
+                }
+                for (Map.Entry<String, List<Task>> entry : byAssignee.entrySet()) {
+                    md.append("\n### ").append(entry.getKey()).append("\n");
+                    for (Task task : entry.getValue()) {
+                        String due = task.getDueDate() != null
+                                ? " (~" + task.getDueDate().toLocalDate() + ")"
+                                : "";
+                        md.append(String.format("- [ ] %s%s\n", task.getTitle(), due));
+                    }
+                }
+            }
+
+            String content = md.toString();
+            methods.filesUploadV2(r -> r
+                    .channel(channelId)
+                    .content(content)
+                    .filename("meeting-result.md")
+                    .title("회의 결과 — " + meetingTitle)
             );
+        } catch (Exception e) {
+            log.warn("매핑 결과 파일 업로드 실패. channelId={}", channelId, e);
+        }
+    }
 
+    private void uploadTranscriptMarkdown(MethodsClient methods, String channelId,
+                                          String meetingTitle,
+                                          List<TranscribeResponse.SegmentInfo> segments) {
+        try {
+            StringBuilder md = new StringBuilder();
+            md.append("# 회의 전사 결과 — ").append(meetingTitle).append("\n\n");
+            for (TranscribeResponse.SegmentInfo seg : segments) {
+                md.append(String.format("[%s] 화자 %s: %s\n",
+                        formatTime(seg.getStartSec()), seg.getSpeakerLabel(), seg.getContent()));
+            }
+
+            String content = md.toString();
+            methods.filesUploadV2(r -> r
+                    .channel(channelId)
+                    .content(content)
+                    .filename("transcript.md")
+                    .title("전사 결과 — " + meetingTitle)
+            );
+        } catch (Exception e) {
+            log.warn("전사 파일 업로드 실패. channelId={}", channelId, e);
+        }
+    }
+
+    private void postToChannel(MethodsClient methods, String channelId,
+                               String meetingTitle, GeminiAnalyzeResponse analysis,
+                               List<Task> tasks,
+                               List<MeetingTranscript.SpeakerMappingEmbedded> speakerMappings) {
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append(String.format("*[회의 분석 완료]* _%s_\n\n", meetingTitle));
+            sb.append(String.format("*요약*\n%s\n\n", analysis.getSummary()));
+            sb.append(String.format("*생성된 이벤트*: %d건\n", analysis.getSavedEventCount()));
+
+            if (!tasks.isEmpty()) {
+                Map<String, List<Task>> byAssignee = new LinkedHashMap<>();
+                for (Task task : tasks) {
+                    String key = task.getAssigneeName() != null ? task.getAssigneeName() : "미정";
+                    byAssignee.computeIfAbsent(key, k -> new ArrayList<>()).add(task);
+                }
+
+                sb.append("\n*할일 목록*\n");
+                for (Map.Entry<String, List<Task>> entry : byAssignee.entrySet()) {
+                    String slackUserId = speakerMappings.stream()
+                            .filter(m -> entry.getKey().equals(m.getUserName()))
+                            .map(MeetingTranscript.SpeakerMappingEmbedded::getSlackUserId)
+                            .findFirst().orElse(null);
+                    String assigneeDisplay = slackUserId != null
+                            ? String.format("<@%s>", slackUserId)
+                            : entry.getKey();
+
+                    sb.append(String.format("\n*%s*\n", assigneeDisplay));
+                    for (Task task : entry.getValue()) {
+                        String due = task.getDueDate() != null
+                                ? " `~" + task.getDueDate().toLocalDate() + "`"
+                                : "";
+                        sb.append(String.format("• %s%s\n", task.getTitle(), due));
+                    }
+                }
+            }
+
+            String message = sb.toString();
             methods.chatPostMessage(r -> r.channel(channelId).text(message));
         } catch (Exception e) {
             log.warn("채널 메시지 전송 실패. channelId={}", channelId, e);
         }
+    }
+
+    private String formatTime(float seconds) {
+        int total = (int) seconds;
+        return String.format("%02d:%02d", total / 60, total % 60);
+    }
+
+    private String truncate(String text, int maxLen) {
+        if (text == null) return "";
+        return text.length() <= maxLen ? text : text.substring(0, maxLen) + "…";
     }
 
     private String sanitizeFilename(String name) {

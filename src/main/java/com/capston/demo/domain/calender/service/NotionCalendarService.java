@@ -1,7 +1,8 @@
 package com.capston.demo.domain.calender.service;
 
 import com.capston.demo.domain.calender.entity.Event;
-import com.capston.demo.global.exception.OAuthAuthenticationException;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -71,29 +72,15 @@ public class NotionCalendarService {
 
             // 이 시점까지 오면 실패로 간주
             log.warn("Failed to create Notion event. status={}, body={}", response.getStatusCode(), response.getBody());
-            throw new OAuthAuthenticationException(
-                    "Failed to create event in Notion",
-                    "notion",
-                    "NOTION_EVENT_CREATE_FAILED"
-            );
+            throw new BusinessException(ErrorCode.NOTION_EVENT_CREATE_FAILED);
+        } catch (BusinessException e) {
+            throw e;
         } catch (HttpClientErrorException e) {
-            // Notion API가 4xx 반환 시 응답 본문까지 로그에 남겨 원인 파악 가능하게 함
-            String responseBody = e.getResponseBodyAsString();
-            log.error("Notion API error while creating event: status={}, body={}", e.getStatusCode(), responseBody, e);
-            throw new OAuthAuthenticationException(
-                    "Notion API error: " + e.getStatusCode() + " - " + responseBody,
-                    "notion",
-                    "NOTION_EVENT_CREATE_ERROR",
-                    e
-            );
+            log.error("Notion API error while creating event: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString(), e);
+            throw new BusinessException(ErrorCode.NOTION_EVENT_CREATE_FAILED, e);
         } catch (Exception e) {
             log.error("Error while creating Notion event: {}", e.getMessage(), e);
-            throw new OAuthAuthenticationException(
-                    "Error while creating event in Notion: " + e.getMessage(),
-                    "notion",
-                    "NOTION_EVENT_CREATE_ERROR",
-                    e
-            );
+            throw new BusinessException(ErrorCode.NOTION_EVENT_CREATE_FAILED, e);
         }
     }
 

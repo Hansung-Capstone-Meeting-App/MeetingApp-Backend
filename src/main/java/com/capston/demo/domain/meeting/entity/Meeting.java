@@ -23,6 +23,9 @@ public class Meeting {
 
     private Long createdBy;
 
+    @Column(name = "workspace_id")
+    private Long workspaceId;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 

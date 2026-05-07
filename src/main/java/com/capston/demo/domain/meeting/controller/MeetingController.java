@@ -1,6 +1,7 @@
 package com.capston.demo.domain.meeting.controller;
 
 import com.capston.demo.domain.meeting.controllerDocs.MeetingControllerDocs;
+import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
@@ -10,6 +11,7 @@ import com.capston.demo.domain.meeting.service.MeetingService;
 import com.capston.demo.domain.meeting.service.MeetingTranscriptService;
 import com.capston.demo.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -24,6 +26,16 @@ public class MeetingController implements MeetingControllerDocs {
     private final MeetingService meetingService;
     private final MeetingTranscriptService transcriptService;
 
+    // 회의 생성 (워크스페이스 소속)
+    // POST /api/meetings
+    @PostMapping
+    public ResponseEntity<MeetingResponse> createMeeting(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestBody MeetingRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(meetingService.createMeeting(request, userDetails.getUserId()));
+    }
+
     // 회의 단건 조회
     // GET /api/meetings/{id}
     @GetMapping("/{id}")
@@ -33,12 +45,18 @@ public class MeetingController implements MeetingControllerDocs {
         return ResponseEntity.ok(meetingService.getMeeting(id, userDetails.getUserId()));
     }
 
-    // 내 회의 목록 조회
-    // GET /api/meetings
+    // 회의 목록 조회
+    // GET /api/meetings?workspaceId=1  → 워크스페이스 소속 회의
+    // GET /api/meetings                → 내가 생성한 회의 (Slack용)
     @GetMapping
     public ResponseEntity<List<MeetingResponse>> getMeetings(
-            @AuthenticationPrincipal CustomUserDetails userDetails) {
-        return ResponseEntity.ok(meetingService.getMeetings(userDetails.getUserId()));
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestParam(required = false) Long workspaceId) {
+        Long userId = userDetails.getUserId();
+        if (workspaceId != null) {
+            return ResponseEntity.ok(meetingService.getMeetingsByWorkspace(workspaceId, userId));
+        }
+        return ResponseEntity.ok(meetingService.getMeetings(userId));
     }
 
     // 회의 삭제

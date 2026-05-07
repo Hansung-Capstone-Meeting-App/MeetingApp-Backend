@@ -8,6 +8,8 @@ import com.capston.demo.domain.meeting.repository.MeetingRepository;
 import com.capston.demo.domain.recording.dto.request.PresignedUploadRequest;
 import com.capston.demo.domain.recording.dto.response.PresignedUrlResponse;
 import com.capston.demo.domain.recording.dto.response.RecordingResponse;
+import com.capston.demo.global.exception.BusinessException;
+import com.capston.demo.global.exception.ErrorCode;
 import com.capston.demo.global.util.S3Util;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -53,7 +55,7 @@ public class RecordingService {
         s3Util.validateAudioFile(file);
 
         Meeting meeting = meetingRepository.findById(meetingId)
-                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
 
         String s3Key = s3Util.generateKey(meetingId, file.getOriginalFilename());
 
@@ -83,7 +85,7 @@ public class RecordingService {
     public RecordingResponse uploadFromStream(Long meetingId, java.io.InputStream inputStream,
                                               long fileSize, String filename) throws IOException {
         Meeting meeting = meetingRepository.findById(meetingId)
-                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + meetingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
 
         String s3Key = s3Util.generateKey(meetingId, filename);
 
@@ -120,7 +122,7 @@ public class RecordingService {
     @Transactional
     public RecordingResponse updateStatus(Long recordingId, RecordingStatus status) {
         MeetingRecording recording = recordingRepository.findById(recordingId)
-                .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
         recording.setStatus(status);
         return new RecordingResponse(recording);
     }
@@ -129,7 +131,7 @@ public class RecordingService {
 
     public PresignedUrlResponse generateUploadPresignedUrl(PresignedUploadRequest request) {
         meetingRepository.findById(request.getMeetingId())
-                .orElseThrow(() -> new IllegalArgumentException("회의를 찾을 수 없습니다. id=" + request.getMeetingId()));
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
 
         String s3Key = s3Util.generateKey(request.getMeetingId(), request.getFilename());
 
@@ -151,9 +153,9 @@ public class RecordingService {
     @Transactional(readOnly = true)
     public PresignedUrlResponse generateDownloadPresignedUrl(Long recordingId, Long userId) {
         MeetingRecording recording = recordingRepository.findById(recordingId)
-                .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
         if (!recording.getMeeting().getCreatedBy().equals(userId)) {
-            throw new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId);
+            throw new BusinessException(ErrorCode.RECORDING_NOT_FOUND);
         }
 
         PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(
@@ -174,9 +176,9 @@ public class RecordingService {
     @Transactional
     public void deleteRecording(Long recordingId, Long userId) {
         MeetingRecording recording = recordingRepository.findById(recordingId)
-                .orElseThrow(() -> new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId));
+                .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
         if (!recording.getMeeting().getCreatedBy().equals(userId)) {
-            throw new IllegalArgumentException("녹음 파일을 찾을 수 없습니다. id=" + recordingId);
+            throw new BusinessException(ErrorCode.RECORDING_NOT_FOUND);
         }
 
         s3Client.deleteObject(DeleteObjectRequest.builder()

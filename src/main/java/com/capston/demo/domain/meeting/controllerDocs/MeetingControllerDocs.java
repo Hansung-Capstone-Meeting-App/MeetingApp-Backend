@@ -1,5 +1,6 @@
 package com.capston.demo.domain.meeting.controllerDocs;
 
+import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
@@ -19,10 +20,21 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 import java.util.List;
 
-@Tag(name = "Meeting", description = "회의 조회 및 트랜스크립트·화자 매핑 API (회의 생성은 Slack 파일 업로드로 자동 처리)")
+@Tag(name = "Meeting", description = "회의 생성/조회 및 트랜스크립트·화자 매핑 API")
 public interface MeetingControllerDocs {
 
     // ── 회의 ──────────────────────────────────────────────────────────────────
+
+    @Operation(
+            summary = "회의 생성",
+            description = "워크스페이스 소속 회의를 생성합니다. workspaceId 필수.",
+            responses = {
+                    @ApiResponse(responseCode = "201", description = "생성 성공"),
+                    @ApiResponse(responseCode = "400", description = "워크스페이스 멤버가 아님")
+            }
+    )
+    ResponseEntity<MeetingResponse> createMeeting(@AuthenticationPrincipal CustomUserDetails userDetails,
+                                                   @org.springframework.web.bind.annotation.RequestBody MeetingRequest request);
 
     @Operation(
             summary = "회의 단건 조회",
@@ -37,13 +49,14 @@ public interface MeetingControllerDocs {
     ResponseEntity<MeetingResponse> getMeeting(@AuthenticationPrincipal CustomUserDetails userDetails, Long id);
 
     @Operation(
-            summary = "내 회의 목록 조회",
-            description = "내가 생성한 회의 목록을 최신순으로 반환합니다.",
+            summary = "회의 목록 조회",
+            description = "workspaceId 지정 시 워크스페이스 소속 회의 반환, 미지정 시 내가 생성한 회의(Slack용) 반환.",
             responses = {
                     @ApiResponse(responseCode = "200", description = "조회 성공")
             }
     )
-    ResponseEntity<List<MeetingResponse>> getMeetings(@AuthenticationPrincipal CustomUserDetails userDetails);
+    ResponseEntity<List<MeetingResponse>> getMeetings(@AuthenticationPrincipal CustomUserDetails userDetails,
+                                                       Long workspaceId);
 
     @Operation(
             summary = "회의 삭제",
