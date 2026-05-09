@@ -107,6 +107,23 @@ public interface WorkspaceControllerDocs {
             Long workspaceId);
 
     @Operation(
+            summary = "워크스페이스 나가기",
+            description = "현재 사용자를 워크스페이스에서 탈퇴시킵니다. **소유자(owner)는 나갈 수 없습니다.**",
+            parameters = {
+                    @Parameter(name = "workspaceId", description = "워크스페이스 ID", example = "1", required = true)
+            },
+            responses = {
+                    @ApiResponse(responseCode = "204", description = "나가기 성공"),
+                    @ApiResponse(responseCode = "400", description = "소유자는 나갈 수 없음"),
+                    @ApiResponse(responseCode = "403", description = "워크스페이스 멤버가 아님"),
+                    @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음")
+            }
+    )
+    ResponseEntity<Void> leaveWorkspace(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            Long workspaceId);
+
+    @Operation(
             summary = "워크스페이스 삭제",
             description = "워크스페이스와 전체 멤버십을 삭제합니다. **소유자(owner)만** 호출 가능합니다.",
             parameters = {

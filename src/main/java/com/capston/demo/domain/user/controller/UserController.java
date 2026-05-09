@@ -3,6 +3,7 @@ package com.capston.demo.domain.user.controller;
 
 import com.capston.demo.domain.user.dto.UserProfileDto;
 import com.capston.demo.domain.user.dto.request.RegisterRequestDto;
+import com.capston.demo.domain.user.dto.response.UserSearchResponse;
 import com.capston.demo.domain.user.dto.request.UpdateUserNameRequestDto;
 import com.capston.demo.domain.user.dto.request.UpdateProfileImageRequestDto;
 import com.capston.demo.domain.user.dto.request.ChangePasswordRequestDto;
@@ -17,6 +18,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -120,6 +122,12 @@ public class UserController {
         Long userId = userDetails.getUserId();
         userService.changePassword(userId, requestDto);
         return ResponseEntity.noContent().build();
+    }
+
+    // GET /api/users/search?q=검색어
+    @GetMapping("/search")
+    public ResponseEntity<List<UserSearchResponse>> searchUsers(@RequestParam String q) {
+        return ResponseEntity.ok(userService.searchUsers(q));
     }
 
     /**

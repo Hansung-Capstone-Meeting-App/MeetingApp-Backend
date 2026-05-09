@@ -20,6 +20,12 @@ public enum ErrorCode {
     ALREADY_MEMBER(409, "이미 멤버입니다"),
     WORKSPACE_ID_REQUIRED(400, "workspaceId는 필수입니다"),
     WORKSPACE_OWNER_REQUIRED(403, "워크스페이스 소유자만 수행할 수 있습니다"),
+    OWNER_CANNOT_LEAVE(400, "워크스페이스 소유자는 탈퇴할 수 없습니다"),
+
+    // Invitation
+    INVITATION_NOT_FOUND(404, "초대를 찾을 수 없습니다"),
+    ALREADY_INVITED(409, "이미 초대 중인 사용자입니다"),
+    INVITATION_ALREADY_PROCESSED(409, "이미 처리된 초대입니다"),
 
     // Meeting
     MEETING_NOT_FOUND(404, "회의를 찾을 수 없습니다"),
