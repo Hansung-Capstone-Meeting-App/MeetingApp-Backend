@@ -19,6 +19,7 @@ public enum ErrorCode {
     NOT_WORKSPACE_MEMBER(403, "워크스페이스 멤버가 아닙니다"),
     ALREADY_MEMBER(409, "이미 멤버입니다"),
     WORKSPACE_ID_REQUIRED(400, "workspaceId는 필수입니다"),
+    WORKSPACE_OWNER_REQUIRED(403, "워크스페이스 소유자만 수행할 수 있습니다"),
 
     // Meeting
     MEETING_NOT_FOUND(404, "회의를 찾을 수 없습니다"),
@@ -30,6 +31,12 @@ public enum ErrorCode {
 
     // Transcript
     TRANSCRIPT_NOT_FOUND(404, "트랜스크립트를 찾을 수 없습니다"),
+
+    // Task / Event
+    TASK_NOT_FOUND(404, "할일을 찾을 수 없습니다"),
+    TASK_ACCESS_DENIED(403, "할일에 대한 접근 권한이 없습니다"),
+    EVENT_NOT_FOUND(404, "일정을 찾을 수 없습니다"),
+    EVENT_ACCESS_DENIED(403, "일정에 대한 접근 권한이 없습니다"),
 
     // OAuth
     OAUTH_TOKEN_EXCHANGE_FAILED(400, "OAuth 로그인 중 오류가 발생했습니다. 다시 시도해주세요."),

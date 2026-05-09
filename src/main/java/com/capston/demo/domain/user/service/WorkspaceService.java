@@ -76,6 +76,17 @@ public class WorkspaceService {
                 .stream().map(WorkspaceMemberResponse::new).collect(Collectors.toList());
     }
 
+    @Transactional
+    public void deleteWorkspace(Long workspaceId, Long userId) {
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
+        if (!workspace.getOwner().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.WORKSPACE_OWNER_REQUIRED);
+        }
+        workspaceMemberRepository.deleteByWorkspace_Id(workspaceId);
+        workspaceRepository.delete(workspace);
+    }
+
     private String generateUniqueSlug(String name) {
         String base = name.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
         String slug = base + "-" + UUID.randomUUID().toString().substring(0, 8);

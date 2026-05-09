@@ -4,6 +4,7 @@ import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
+import com.capston.demo.domain.meeting.dto.response.MeetingSummaryResponse;
 import com.capston.demo.domain.meeting.dto.response.SpeakerMappingResponse;
 import com.capston.demo.domain.meeting.dto.response.TranscriptResponse;
 import com.capston.demo.global.security.CustomUserDetails;
@@ -57,6 +58,21 @@ public interface MeetingControllerDocs {
     )
     ResponseEntity<List<MeetingResponse>> getMeetings(@AuthenticationPrincipal CustomUserDetails userDetails,
                                                        Long workspaceId);
+
+    @Operation(
+            summary = "회의 대시보드 요약",
+            description = "회의 1개에 대한 요약·키워드·할일 상태 분포·일정 개수를 한 번에 반환합니다.\n\n" +
+                    "Gemini 분석이 완료된 경우 summary, keywords, analyzedAt이 채워집니다.",
+            parameters = {
+                    @Parameter(name = "id", description = "회의 ID", example = "1", required = true)
+            },
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "조회 성공"),
+                    @ApiResponse(responseCode = "403", description = "접근 권한 없음"),
+                    @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음")
+            }
+    )
+    ResponseEntity<MeetingSummaryResponse> getMeetingSummary(@AuthenticationPrincipal CustomUserDetails userDetails, Long id);
 
     @Operation(
             summary = "회의 삭제",

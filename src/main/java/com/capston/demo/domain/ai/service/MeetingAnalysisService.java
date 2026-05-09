@@ -28,6 +28,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 import com.capston.demo.global.exception.BusinessException;
@@ -129,6 +130,15 @@ public class MeetingAnalysisService {
                 .map(m -> new GeminiAnalysisResult.SpeakerInfo(m.getSpeakerLabel(), m.getUserId(), m.getUserName()))
                 .collect(Collectors.toList());
 
+        // speakerLabel → userId 역조회 맵 (화자 매핑에서 userId가 선택된 경우에만 유효)
+        Map<String, Long> speakerToUserId = transcript.getSpeakerMappings().stream()
+                .filter(m -> m.getUserId() != null)
+                .collect(Collectors.toMap(
+                        MeetingTranscript.SpeakerMappingEmbedded::getSpeakerLabel,
+                        MeetingTranscript.SpeakerMappingEmbedded::getUserId,
+                        (a, b) -> a
+                ));
+
         GeminiAnalysisResult analysis = geminiAiService.analyze(
                 stt,
                 speakerInfos,
@@ -144,8 +154,12 @@ public class MeetingAnalysisService {
         List<GeminiAnalysisResult.ExtractedEvent> filteredEvents = filterEvents(analysis.getEvents());
         logExtractedEvents(meeting.getId(), filteredEvents);
 
-        saveTasks(meeting.getId(), filteredTasks);
-        saveEvents(meeting.getId(), filteredEvents);
+        // 재실행 시 기존 AI 생성 데이터 삭제 (중복 방지)
+        taskRepository.deleteByMeetingIdAndSource(meeting.getId(), TaskSource.AI_GENERATED);
+        eventRepository.deleteByMeetingId(meeting.getId());
+
+        saveTasks(meeting.getId(), meeting.getCreatedBy(), meeting.getWorkspaceId(), filteredTasks, speakerToUserId);
+        saveEvents(meeting.getId(), meeting.getCreatedBy(), meeting.getWorkspaceId(), filteredEvents);
 
         if (transcript.getRecordingId() != null) {
             recordingRepository.findById(transcript.getRecordingId())
@@ -164,11 +178,17 @@ public class MeetingAnalysisService {
 
     // ── private helpers ────────────────────────────────────────────────────────
 
-    private void saveTasks(Long meetingId, List<GeminiAnalysisResult.ExtractedTask> tasks) {
+    private void saveTasks(Long meetingId, Long createdBy, Long workspaceId,
+                           List<GeminiAnalysisResult.ExtractedTask> tasks,
+                           Map<String, Long> speakerToUserId) {
         for (GeminiAnalysisResult.ExtractedTask extractedTask : tasks) {
             Task task = new Task();
             task.setMeetingId(meetingId);
+            task.setCreatedBy(createdBy);
+            task.setWorkspaceId(workspaceId);
             task.setAssigneeName(extractedTask.getAssigneeName());
+            // speakerLabel로 실제 userId 역조회 (화자 매핑 시 userId가 선택된 경우에만 설정)
+            task.setAssigneeId(speakerToUserId.get(extractedTask.getSpeakerLabel()));
             task.setTitle(extractedTask.getTitle());
             task.setDescription(normalizeText(extractedTask.getDescription()));
             task.setSource(TaskSource.AI_GENERATED);
@@ -186,7 +206,7 @@ public class MeetingAnalysisService {
         }
     }
 
-    private void saveEvents(Long meetingId, List<GeminiAnalysisResult.ExtractedEvent> events) {
+    private void saveEvents(Long meetingId, Long createdBy, Long workspaceId, List<GeminiAnalysisResult.ExtractedEvent> events) {
         for (GeminiAnalysisResult.ExtractedEvent extractedEvent : events) {
             LocalDateTime startAt;
             LocalDateTime endAt;
@@ -208,7 +228,8 @@ public class MeetingAnalysisService {
 
             Event event = new Event();
             event.setMeetingId(meetingId);
-            event.setCreatedBy(extractedEvent.getUserId());
+            event.setWorkspaceId(workspaceId);
+            event.setCreatedBy(createdBy);
             event.setCreatedByName(extractedEvent.getCreatedByName());
             event.setTitle(extractedEvent.getTitle());
             event.setDescription(normalizeText(extractedEvent.getDescription()));

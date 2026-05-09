@@ -1,6 +1,7 @@
 package com.capston.demo.domain.calender.controller;
 
 
+import com.capston.demo.domain.calender.controllerDocs.CalendarControllerDocs;
 import com.capston.demo.domain.calender.dto.request.NotionSyncRequestDto;
 import com.capston.demo.domain.calender.entity.Event;
 import com.capston.demo.domain.calender.repository.EventRepository;
@@ -19,12 +20,11 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
-// 캘린더 관련 REST API (Event를 Notion 캘린더와 동기화하는 역할)
 @RestController
 @RequestMapping("/api/calendar")
 @RequiredArgsConstructor
 @Slf4j
-public class CalendarController {
+public class CalendarController implements CalendarControllerDocs {
 
     // 이벤트를 조회/저장하는 JPA 리포지토리
     private final EventRepository eventRepository;

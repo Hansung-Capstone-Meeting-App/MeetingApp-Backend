@@ -5,6 +5,7 @@ import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
+import com.capston.demo.domain.meeting.dto.response.MeetingSummaryResponse;
 import com.capston.demo.domain.meeting.dto.response.SpeakerMappingResponse;
 import com.capston.demo.domain.meeting.dto.response.TranscriptResponse;
 import com.capston.demo.domain.meeting.service.MeetingService;
@@ -57,6 +58,15 @@ public class MeetingController implements MeetingControllerDocs {
             return ResponseEntity.ok(meetingService.getMeetingsByWorkspace(workspaceId, userId));
         }
         return ResponseEntity.ok(meetingService.getMeetings(userId));
+    }
+
+    // 회의 대시보드 요약
+    // GET /api/meetings/{id}/summary
+    @GetMapping("/{id}/summary")
+    public ResponseEntity<MeetingSummaryResponse> getMeetingSummary(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(meetingService.getMeetingSummary(id, userDetails.getUserId()));
     }
 
     // 회의 삭제

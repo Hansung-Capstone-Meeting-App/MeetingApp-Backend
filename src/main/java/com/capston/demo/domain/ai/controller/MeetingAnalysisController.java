@@ -1,5 +1,6 @@
 package com.capston.demo.domain.ai.controller;
 
+import com.capston.demo.domain.ai.controllerDocs.MeetingAnalysisControllerDocs;
 import com.capston.demo.domain.ai.dto.response.GeminiAnalyzeResponse;
 import com.capston.demo.domain.ai.dto.response.TranscribeResponse;
 import com.capston.demo.domain.ai.service.MeetingAnalysisService;
@@ -17,7 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/meetings")
 @RequiredArgsConstructor
-public class MeetingAnalysisController {
+public class MeetingAnalysisController implements MeetingAnalysisControllerDocs {
 
     private final MeetingAnalysisService analysisService;
 

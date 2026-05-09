@@ -1,5 +1,6 @@
 package com.capston.demo.domain.user.controller;
 
+import com.capston.demo.domain.user.controllerDocs.WorkspaceControllerDocs;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceCreateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceInviteRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceMemberResponse;
@@ -18,7 +19,7 @@ import java.util.List;
 @RestController
 @RequestMapping("/api/workspaces")
 @RequiredArgsConstructor
-public class WorkspaceController {
+public class WorkspaceController implements WorkspaceControllerDocs {
 
     private final WorkspaceService workspaceService;
 
@@ -58,5 +59,15 @@ public class WorkspaceController {
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable Long workspaceId) {
         return ResponseEntity.ok(workspaceService.getMembers(workspaceId, userDetails.getUserId()));
+    }
+
+    // 워크스페이스 삭제 (owner만 가능)
+    // DELETE /api/workspaces/{workspaceId}
+    @DeleteMapping("/{workspaceId}")
+    public ResponseEntity<Void> deleteWorkspace(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long workspaceId) {
+        workspaceService.deleteWorkspace(workspaceId, userDetails.getUserId());
+        return ResponseEntity.noContent().build();
     }
 }

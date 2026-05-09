@@ -5,6 +5,7 @@ import lombok.Getter;
 
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Getter
@@ -29,22 +30,33 @@ public class TranscriptResponse {
         this.keywords = transcript.getKeywords();
         this.analyzedAt = transcript.getAnalyzedAt();
         this.createdAt = transcript.getCreatedAt();
+
+        Map<String, String> labelToName = transcript.getSpeakerMappings().stream()
+                .filter(m -> m.getUserName() != null)
+                .collect(Collectors.toMap(
+                        MeetingTranscript.SpeakerMappingEmbedded::getSpeakerLabel,
+                        MeetingTranscript.SpeakerMappingEmbedded::getUserName,
+                        (a, b) -> a
+                ));
+
         this.segments = transcript.getSegments().stream()
-                .map(SegmentResponse::new)
+                .map(s -> new SegmentResponse(s, labelToName.get(s.getSpeakerLabel())))
                 .collect(Collectors.toList());
     }
 
     @Getter
     public static class SegmentResponse {
         private final String speakerLabel;
+        private final String speakerName;
         private final Long userId;
         private final String content;
         private final Float startSec;
         private final Float endSec;
         private final Integer sequence;
 
-        public SegmentResponse(MeetingTranscript.SegmentEmbedded segment) {
+        public SegmentResponse(MeetingTranscript.SegmentEmbedded segment, String speakerName) {
             this.speakerLabel = segment.getSpeakerLabel();
+            this.speakerName = speakerName;
             this.userId = segment.getUserId();
             this.content = segment.getContent();
             this.startSec = segment.getStartSec();

@@ -1,9 +1,15 @@
 package com.capston.demo.domain.meeting.service;
 
+import com.capston.demo.domain.calender.entity.TaskStatus;
+import com.capston.demo.domain.calender.repository.EventRepository;
+import com.capston.demo.domain.calender.repository.TaskRepository;
 import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
+import com.capston.demo.domain.meeting.dto.response.MeetingSummaryResponse;
 import com.capston.demo.domain.meeting.entity.Meeting;
+import com.capston.demo.domain.meeting.entity.MeetingTranscript;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
+import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoRepository;
 import com.capston.demo.domain.user.repository.WorkspaceMemberRepository;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
@@ -12,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -20,6 +27,9 @@ public class MeetingService {
 
     private final MeetingRepository meetingRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final MeetingTranscriptMongoRepository transcriptRepository;
+    private final TaskRepository taskRepository;
+    private final EventRepository eventRepository;
 
     @Transactional
     public MeetingResponse createMeeting(MeetingRequest request, Long userId) {
@@ -66,6 +76,33 @@ public class MeetingService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
         checkAccess(meeting, userId);
         meetingRepository.delete(meeting);
+    }
+
+    @Transactional(readOnly = true)
+    public MeetingSummaryResponse getMeetingSummary(Long meetingId, Long userId) {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        checkAccess(meeting, userId);
+
+        MeetingTranscript transcript = transcriptRepository
+                .findByMeetingIdOrderByCreatedAtDesc(meetingId)
+                .stream().findFirst().orElse(null);
+
+        Map<TaskStatus, Long> taskCountMap = taskRepository.findByMeetingId(meetingId).stream()
+                .collect(Collectors.groupingBy(t -> t.getStatus() != null ? t.getStatus() : TaskStatus.TODO,
+                        Collectors.counting()));
+
+        long eventCount = eventRepository.countByMeetingId(meetingId);
+
+        return new MeetingSummaryResponse(
+                meetingId,
+                meeting.getTitle(),
+                transcript != null ? transcript.getSummary() : null,
+                transcript != null ? transcript.getKeywords() : List.of(),
+                transcript != null ? transcript.getAnalyzedAt() : null,
+                taskCountMap,
+                eventCount
+        );
     }
 
     // workspaceId 있으면 멤버십 체크, 없으면(Slack 생성) createdBy 체크
