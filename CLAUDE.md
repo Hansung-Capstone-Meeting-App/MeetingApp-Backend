@@ -2,7 +2,7 @@
 
 ## 프로젝트 개요
 - **목적**: 회의 관리 백엔드 (STT, AI 분석, Slack 연동)
-- **주 인터페이스**: Slack — 채널에 녹음 파일 업로드 → 자동 분석 → 결과 채널 게시
+- **주 인터페이스**: 앱(웹) + Slack — 두 인터페이스 공존
 - **팀 프로젝트**: 한성대 캡스톤 2026
 
 ## 기술 스택
@@ -13,10 +13,10 @@
 | DB (문서형) | MongoDB Atlas (Azure, Korea Central) |
 | ORM | Spring Data JPA (MySQL), Spring Data MongoDB |
 | Storage | AWS S3 (`hansung-capstone-2026`, ap-northeast-2) |
-| STT | Assembly AI |
+| STT | Assembly AI (화자 분리 포함) |
 | AI 분석 | Google Gemini 2.5 Flash |
 | Auth | JWT + OAuth2 (Google, Notion) |
-| 외부 연동 | Notion 캘린더 |
+| 외부 연동 | Notion 캘린더, Slack |
 
 ## 패키지 구조
 ```
@@ -27,42 +27,56 @@ com.capston.demo
 │   └── DevCalendarTestDataController.java        # 테스트용 더미 데이터
 ├── domain
 │   ├── ai
-│   │   ├── controller  MeetingAnalysisController
-│   │   ├── dto         AssemblyAiTranscriptResult, GeminiAnalysisResult (internal)
-│   │   │               GeminiAnalyzeResponse, TranscribeResponse (response)
-│   │   └── service     AssemblyAiService, GeminiAiService, MeetingAnalysisService
+│   │   ├── controller      MeetingAnalysisController
+│   │   ├── controllerDocs  MeetingAnalysisControllerDocs
+│   │   ├── dto             AssemblyAiTranscriptResult, GeminiAnalysisResult (internal)
+│   │   │                   GeminiAnalyzeResponse, TranscribeResponse (response)
+│   │   └── service         AssemblyAiService, GeminiAiService, MeetingAnalysisService
 │   ├── calender
-│   │   ├── controller  CalendarController, EventController, TaskController
-│   │   ├── entity      Event, EventParticipant(Id), Task, TaskSource, TaskStatus, ParticipantStatus
-│   │   ├── repository  EventRepository, TaskRepository
-│   │   └── service     EventService, TaskService, NotionCalendarService
+│   │   ├── controller      CalendarController, EventController, TaskController
+│   │   ├── controllerDocs  CalendarControllerDocs, EventControllerDocs, TaskControllerDocs
+│   │   ├── dto/request     EventCreateRequest, EventUpdateRequest
+│   │   │                   TaskCreateRequest, TaskUpdateRequest
+│   │   │                   NotionSyncRequestDto
+│   │   ├── dto/response    EventResponse, TaskResponse, TaskStatsResponse
+│   │   ├── entity          Event, EventParticipant(Id), Task, TaskSource, TaskStatus, ParticipantStatus
+│   │   ├── repository      EventRepository, TaskRepository
+│   │   └── service         EventService, TaskService, NotionCalendarService
 │   ├── meeting
-│   │   ├── controller  MeetingController
-│   │   ├── entity      Meeting, MeetingRecording, MeetingTranscript(MongoDB), RecordingStatus
-│   │   ├── repository  MeetingRepository, MeetingRecordingRepository, MeetingTranscriptMongoRepository
-│   │   └── service     MeetingService, MeetingTranscriptService
+│   │   ├── controller      MeetingController
+│   │   ├── controllerDocs  MeetingControllerDocs
+│   │   ├── dto/request     MeetingRequest, SpeakerMappingRequest, TranscriptRequest
+│   │   ├── dto/response    MeetingResponse, MeetingSummaryResponse, TranscriptResponse,
+│   │   │                   SpeakerMappingResponse
+│   │   ├── entity          Meeting, MeetingRecording, MeetingTranscript(MongoDB), RecordingStatus
+│   │   ├── repository      MeetingRepository, MeetingRecordingRepository,
+│   │   │                   MeetingTranscriptMongoRepository
+│   │   └── service         MeetingService, MeetingTranscriptService
 │   ├── recording
-│   │   ├── controller  RecordingController
-│   │   ├── dto         PresignedUploadRequest, RecordingResponse, PresignedUrlResponse
-│   │   └── service     RecordingService
+│   │   ├── controller      RecordingController
+│   │   ├── controllerDocs  RecordingControllerDocs
+│   │   ├── dto             PresignedUploadRequest, RecordingResponse, PresignedUrlResponse
+│   │   └── service         RecordingService
 │   ├── slack
-│   │   ├── controller  SlackEventController, SlackInteractionController
-│   │   └── service     SlackService
+│   │   ├── controller      SlackEventController, SlackInteractionController
+│   │   └── service         SlackService
 │   └── user
-│       ├── controller  AuthController, OAuth2Controller, UserController, WorkspaceController
-│       ├── entity      User, RefreshToken, UserNotionAccount
-│       │               Workspace, WorkspaceMember, WorkspaceMemberId  ← user 패키지에 혼재 (추후 분리 고려)
-│       ├── repository  UserRepository, RefreshTokenRepository, UserNotionAccountRepository
-│       │               WorkspaceRepository, WorkspaceMemberRepository
-│       ├── dto         workspace/ (WorkspaceCreateRequest, WorkspaceInviteRequest,
-│       │                          WorkspaceResponse, WorkspaceMemberResponse)
-│       └── service     AuthService, UserService, GoogleOAuth2Service, NotionOAuth2Service,
-│                       OAuthUserService, MyUserDetailsService, S3Service, WorkspaceService
+│       ├── controller      AuthController, OAuth2Controller, UserController, WorkspaceController
+│       ├── controllerDocs  WorkspaceControllerDocs
+│       ├── entity          User, RefreshToken, UserNotionAccount
+│       │                   Workspace, WorkspaceMember, WorkspaceMemberId
+│       ├── repository      UserRepository, RefreshTokenRepository, UserNotionAccountRepository
+│       │                   WorkspaceRepository, WorkspaceMemberRepository
+│       ├── dto/workspace   WorkspaceCreateRequest, WorkspaceInviteRequest,
+│       │                   WorkspaceResponse, WorkspaceMemberResponse
+│       └── service         AuthService, UserService, GoogleOAuth2Service, NotionOAuth2Service,
+│                           OAuthUserService, MyUserDetailsService, S3Service, WorkspaceService
 └── global
     ├── config      SecurityConfig, JwtAuthenticationFilter, MongoConfig, S3Config,
     │               OAuth2Config, SwaggerConfig
-    ├── exception   GlobalExceptionHandler, DuplicateEmailException,
-    │               ExpiredTokenException, InvalidTokenException, OAuthAuthenticationException
+    ├── exception   GlobalExceptionHandler, BusinessException, ErrorCode
+    │               DuplicateEmailException, ExpiredTokenException,
+    │               InvalidTokenException, OAuthAuthenticationException
     ├── security    CustomUserDetails
     └── util        JwtUtil, S3Util
 ```
@@ -76,10 +90,9 @@ com.capston.demo
 - `refresh_tokens`, `user_notion_accounts`
 
 ### MongoDB 사용 (비정형 대용량 데이터)
-- `meeting_transcripts` → `MeetingTranscript` Document (완료)
-- `transcript_segments` → `MeetingTranscript.segments[]` 배열로 내장 (완료)
-- `speaker_mappings` → `MeetingTranscript.speakerMappings[]` 배열로 내장 (완료)
-- Gemini AI 분석 결과 raw JSON (향후)
+- `meeting_transcripts` → `MeetingTranscript` Document
+- `transcript_segments` → `MeetingTranscript.segments[]` 배열로 내장
+- `speaker_mappings` → `MeetingTranscript.speakerMappings[]` 배열로 내장
 
 ### 연결 키
 - MongoDB Document는 `meetingId` 필드로 MySQL `meetings.id` (Long) 참조
@@ -90,6 +103,7 @@ com.capston.demo
 ### Meeting (MySQL)
 - `id`, `title`, `workspaceId` (Long, nullable — Slack 생성 시 null), `createdBy` (userId), `createdAt`
 - `recordings[]` — OneToMany → MeetingRecording
+- 접근제어: workspaceId 있으면 멤버십, 없으면 createdBy 이중 처리
 
 ### Workspace (MySQL) — user 패키지에 위치
 - `id`, `name`, `slug` (unique), `owner` (User FK), `createdAt`
@@ -97,17 +111,21 @@ com.capston.demo
 
 ### MeetingTranscript (MongoDB Document)
 - `_id` (String), `meetingId` (Long, MySQL 참조), `recordingId` (Long)
-- `fullText`, `summary`, `analyzedAt`, `createdAt`
+- `fullText`, `summary`, `keywords[]`, `analyzedAt`, `createdAt`
 - `segments[]` — `SegmentEmbedded` (speakerLabel, userId, content, startSec, endSec, sequence)
 - `speakerMappings[]` — `SpeakerMappingEmbedded` (speakerLabel, userId, userName, slackUserId)
 
 ### Task (MySQL)
-- `id`, `title`, `description`, `assigneeId`, `meetingId`, `workspaceId`, `dueDate`
-- `status` (TaskStatus enum), `source` (TaskSource enum — AI/MANUAL)
+- `id`, `title`, `description`, `assigneeId`, `assigneeName`, `createdBy`
+- `meetingId`, `workspaceId`, `dueDate`
+- `status` (TaskStatus: TODO/IN_PROGRESS/DONE), `source` (TaskSource: AI_GENERATED/MANUAL)
+- **중요**: Gemini 생성 시 `createdBy` = meeting.createdBy, `workspaceId` = meeting.workspaceId 자동 설정
 
 ### Event (MySQL)
-- `id`, `title`, `description`, `startAt`, `endAt`, `workspaceId`, `createdBy`
-- `participants[]` — EventParticipant (userId, status)
+- `id`, `title`, `description`, `location`, `startAt`, `endAt`, `isAllDay`
+- `workspaceId`, `createdBy`, `createdByName`, `meetingId`, `color`, `createdAt`
+- `participants[]` — EventParticipant (userId, status: PENDING/ACCEPTED/DECLINED)
+- **중요**: Gemini 생성 시 `createdBy` = meeting.createdBy, `workspaceId` = meeting.workspaceId 자동 설정
 
 ## 구현된 API 엔드포인트
 
@@ -123,6 +141,7 @@ com.capston.demo
 ### 워크스페이스 (`/api/workspaces`)
 - `POST /api/workspaces` — 생성 (생성자 자동으로 owner 멤버 등록)
 - `GET /api/workspaces` — 내가 속한 워크스페이스 목록 (owner + member 모두)
+- `DELETE /api/workspaces/{id}` — 삭제 (owner만 가능, 멤버십도 함께 삭제)
 - `POST /api/workspaces/{id}/members` — 이메일로 멤버 초대
 - `GET /api/workspaces/{id}/members` — 멤버 목록 (화자 매핑 드롭다운용)
 
@@ -131,15 +150,18 @@ com.capston.demo
 - `GET /api/meetings?workspaceId=` — 워크스페이스 소속 회의 목록
 - `GET /api/meetings` — 내가 생성한 회의 목록 (Slack용)
 - `GET /api/meetings/{id}` — 회의 단건 조회
+- `GET /api/meetings/{id}/summary` — 회의 대시보드 (요약·키워드·Task 상태 분포·Event 개수)
 - `DELETE /api/meetings/{id}` — 회의 삭제
 - `POST /api/meetings/{meetingId}/transcript` — 트랜스크립트 저장
-- `GET /api/meetings/{meetingId}/transcript` — 트랜스크립트 조회
+- `GET /api/meetings/{meetingId}/transcript` — 트랜스크립트 조회 (segments에 speakerName 포함)
 - `PUT /api/meetings/transcripts/{transcriptId}/speaker-mappings` — 화자 매핑 저장
 - `GET /api/meetings/transcripts/{transcriptId}/speaker-mappings` — 화자 매핑 조회
 
 ### AI 분석 (`/api/meetings`)
 - `POST /api/meetings/{meetingId}/recordings/{recordingId}/transcribe` — STT 전사
 - `POST /api/meetings/transcripts/{transcriptId}/gemini-analyze` — Gemini AI 분석
+  - 재실행 시 기존 AI 생성 Task/Event 자동 삭제 후 재저장 (중복 방지)
+  - speakerLabel → userId 역조회로 task.assigneeId 자동 설정
 
 ### 녹음 (`/api/recordings`)
 - `POST /api/recordings/upload?meetingId=` — 서버 경유 업로드
@@ -149,16 +171,40 @@ com.capston.demo
 - `PATCH /api/recordings/{id}/status` — 상태 변경
 - `DELETE /api/recordings/{id}` — 삭제
 
-### 캘린더 (`/api/tasks`, `/api/events`, `/api/calendar`)
-- `GET /api/tasks?meetingId=&workspaceId=&assigneeId=` — 할일 목록 조회
-- Event CRUD, Notion 동기화
+### 할일 (`/api/tasks`)
+- `GET /api/tasks?meetingId=&workspaceId=&assigneeId=&status=&dueBefore=` — 목록 조회
+  - 팀 전체 조회 (createdBy 필터 없음)
+  - `status`: TODO / IN_PROGRESS / DONE 필터
+  - `dueBefore`: 마감일 이전 필터 (yyyy-MM-dd'T'HH:mm:ss)
+- `GET /api/tasks/stats?workspaceId=&meetingId=` — 상태 분포 (칸반 보드용)
+- `GET /api/tasks/{id}` — 단건 조회
+- `POST /api/tasks` — 수동 생성
+- `PATCH /api/tasks/{id}` — 수정 (부분 업데이트 — 보낸 필드만 변경)
+- `DELETE /api/tasks/{id}` — 삭제
+
+### 일정 (`/api/events`)
+- `GET /api/events?meetingId=&workspaceId=` — 목록 조회
+  - 팀 전체 조회 (createdBy 필터 없음)
+  - 응답에 `relatedTasks[]` 포함 (같은 meetingId Task의 id/title/status/assigneeName/dueDate)
+- `GET /api/events/{id}` — 단건 조회 (relatedTasks 포함)
+- `POST /api/events` — 수동 생성
+- `PATCH /api/events/{id}` — 수정 (부분 업데이트)
+- `DELETE /api/events/{id}` — 삭제
+
+### 캘린더/Notion 동기화 (`/api/calendar`)
+- `GET /api/calendar/workspaces/{workspaceId}/events` — 워크스페이스 이벤트 조회
+- `POST /api/calendar/events/{eventId}/notion-sync` — 단일 이벤트 Notion 동기화
+- `POST /api/calendar/workspaces/{workspaceId}/notion-sync` — 워크스페이스 전체 Notion 동기화
+- `POST /api/calendar/events/notion-sync-batch` — 이벤트 ID 목록 일괄 동기화
 
 ### Slack (`/slack`)
 - `POST /slack/events` — Slack 이벤트 수신 (file_shared 등)
 - `POST /slack/interactions` — 버튼 클릭, Modal 제출
 
 ## 보안 원칙
-- 회의/녹음 접근: `workspaceId` 있으면 `WorkspaceMember` 멤버십 검증, 없으면(Slack 생성) `createdBy` 검증
+- 회의/녹음: `workspaceId` 있으면 `WorkspaceMember` 멤버십 검증, 없으면(Slack 생성) `createdBy` 검증
+- Task/Event 수정·삭제: `workspaceId` 있으면 멤버십 검증, 없으면 `createdBy` 검증
+- 워크스페이스 삭제: owner만 가능
 - 워크스페이스 멤버 초대/조회: 요청자가 해당 워크스페이스 멤버인지 검증
 - JWT 인증 기반, Spring Security 사용
 
@@ -168,6 +214,7 @@ com.capston.demo
 - 실무 관점 조언 선호
 - 불필요한 추상화, 헬퍼 클래스 추가 금지
 - 보안 취약점(SQL Injection, 인가 누락 등) 주의
+- Swagger 문서는 controllerDocs 인터페이스로 분리 (Controller implements XxxControllerDocs)
 
 ## 환경 변수 (application.yml 참고)
 - `DATASOURCE_URL/USERNAME/PASSWORD` — Azure MySQL
@@ -185,34 +232,40 @@ com.capston.demo
 > 핵심 가치: Slack 메신저를 사용하면서 동시에 회의 관리 앱 기능을 활용 가능 (두 인터페이스 공존)
 
 ```
-1. 로그인 후 워크스페이스 생성, 다른 사용자 초대 가능
+1. 로그인 후 워크스페이스 생성, 다른 사용자 초대
 
 2. 워크스페이스에서 녹음 파일 업로드
-   → STT 자동 변환 시작 (화자 자동 분리: 화자A, 화자B, ...)
+   → STT 자동 변환 시작 (화자 자동 분리: SPEAKER_00, SPEAKER_01, ...)
 
 3. STT 완료 후 대화 내용 확인 + 화자 매핑
-   - 수동 이름 입력 또는 워크스페이스 멤버 중 선택
-   - Slack 사용 시 채널 내 버튼 클릭 → Modal에서 매핑 가능
+   - GET /api/workspaces/{id}/members 로 멤버 목록 조회 → 드롭다운 선택
+   - PUT speaker-mappings 시 반드시 userId + userName 함께 전송 (userId null 금지)
+   - Slack 사용 시 채널 내 버튼 클릭 → Modal에서 Slack 멤버 선택
 
-4. 화자 매핑 완료 후 AI 분석 결과 표시
-   - 화자 이름이 적용된 전체 대화록
-   - 회의 요약
+4. 화자 매핑 완료 후 Gemini AI 분석 실행
+   - 트랜스크립트 segments에 speakerName이 적용된 상태로 조회 가능
+   - 요약, 키워드, 할일, 일정 자동 추출
+   - speakerLabel → userId 역조회로 Task.assigneeId 자동 설정
+   - 재실행 시 기존 AI 생성 Task/Event 자동 삭제 후 재저장 (중복 없음)
 
-5. 캘린더(인앱)에 할일 등록 — 두 가지 방법
-   A. AI가 추출한 할일 리스트 검토 후 등록 (담당자, 마감일 확인/수정 가능)
-   B. 사용자가 직접 수동 등록 (담당자, 업무 내용, 마감일 직접 입력)
+5. 캘린더(인앱)에서 AI 추출 결과 검토 및 수정
+   A. AI 추출 할일/일정을 PATCH로 수정 (담당자, 마감일, 상태 등)
+   B. 불필요한 항목 DELETE
+   C. 누락된 항목 수동으로 POST 추가
 
-6. 워크스페이스 내 녹음 파일 누적 업로드 가능
-   → 회의마다 캘린더 할일 지속 갱신
+6. 워크스페이스 전체 할일 상태 현황 조회 (칸반 보드)
+   - GET /api/tasks/stats?workspaceId= 로 TODO/IN_PROGRESS/DONE 분포 확인
+   - GET /api/meetings/{id}/summary 로 회의별 대시보드 확인
 
-7. 선택적으로 Notion 캘린더 연동 가능
+7. 선택적으로 Notion 캘린더 연동
    (인앱 캘린더 데이터를 Notion으로 내보내기)
 ```
 
 ### 캘린더 원칙
 - 기본: 인앱 캘린더 (Tasks, Events)
 - 선택: Notion 연동 (원하는 경우에만 내보내기)
-- 할일은 AI 추출 또는 수동 등록 모두 지원, 담당자/마감일 포함
+- 할일은 AI 추출 또는 수동 등록 모두 지원
+- 팀 전체 조회: meetingId/workspaceId 기준 조회 시 createdBy 필터 없이 팀 전체 반환
 
 ---
 
@@ -223,7 +276,7 @@ com.capston.demo
 채널에 오디오 파일 업로드 (m4a, mp3)
   → file_shared 이벤트 수신 (/slack/events)
   → Slack 유저 이메일로 DB User 조회/자동생성
-  → Meeting 자동 생성 (createdBy = user.id)
+  → Meeting 자동 생성 (createdBy = user.id, workspaceId = null)
   → S3 업로드
   → AssemblyAI STT (화자분리 포함)
   → Gemini AI 분석 (요약, 키워드, 할일, 이벤트 추출)
@@ -233,55 +286,48 @@ com.capston.demo
 ### 목표 플로우 (미구현)
 ```
 ... STT 완료
-  → 채널에 "화자 매핑" 버튼 메시지 게시
-  → 버튼 클릭 → Slack Modal 열림 (화자A/B/C → Slack 워크스페이스 멤버 선택)
-  → Modal 제출 → 화자 매핑 MongoDB 저장
-  → Gemini AI 분석 (매핑된 이름/slackUserId 반영)
+  → 채널에 "화자 매핑하기" 버튼 메시지 게시
+  → 버튼 클릭 → Slack Modal 열림 (SPEAKER_00/01 → Slack 워크스페이스 멤버 선택)
+  → Modal 제출 → speakerMappings MongoDB 저장 (userId + slackUserId + userName)
+  → Gemini AI 분석 (매핑된 이름/userId 반영, assigneeId 자동 설정)
   → 결과를 채널에 게시 (DM 아님)
-  → Slack Lists 생성 (할 일 항목, 담당자, 마감일 포함)
+  → Slack Lists 생성 (할일 항목, 담당자, 마감일 포함)
 ```
 
 ### 미구현 작업 목록
 
-#### 1. SecurityConfig — `/slack/interactions` 허용
+#### 1. SecurityConfig — `/slack/interactions` 허용 확인
 ```java
 .requestMatchers("/slack/events", "/slack/interactions").permitAll()
 ```
 
 #### 2. SlackEventController — channel_id 추출
 - `file_shared` 이벤트 payload에서 `channel_id` 파싱
-- `slackService.handleFileShared(fileId, userId, channelId)` 로 변경
+- `slackService.handleFileShared(fileId, userId, channelId)` 로 시그니처 변경
 
 #### 3. SlackService 리팩터링
-- `handleFileShared(fileId, userId, channelId)` 로 시그니처 변경
 - STT 완료 후 Gemini 즉시 호출 대신:
   - 화자 레이블 추출 → `PendingAnalysis` 인메모리 저장 (ConcurrentHashMap)
   - 채널에 "화자 매핑하기" 버튼 메시지 게시
-- `openSpeakerMappingModal(triggerId, pendingKey)` 메서드 추가
-  - `views.open` API로 화자별 Slack 멤버 선택 드롭다운 Modal 생성
-- `handleSpeakerMappingSubmit(pendingKey, values)` 메서드 추가 (@Async)
-  - 매핑 저장 → Gemini 분석 → 채널에 결과 게시 → Slack Lists 생성
-- `sendDm` → `postToChannel` 로 변경
+- `openSpeakerMappingModal(triggerId, pendingKey)` — `views.open` API로 Modal 생성
+- `handleSpeakerMappingSubmit(pendingKey, values)` (@Async) — 매핑 저장 → Gemini → 채널 게시
+- `sendDm` → `postToChannel` 변경
 
-#### 4. SlackInteractionController 신규 생성
+#### 4. SlackInteractionController 구현
 - `POST /slack/interactions` (application/x-www-form-urlencoded)
-- `block_actions` → 버튼 클릭 → `openSpeakerMappingModal` 호출
-- `view_submission` → Modal 제출 → `handleSpeakerMappingSubmit` 호출
+- `block_actions` → 버튼 클릭 → Modal 열기
+- `view_submission` → Modal 제출 → 화자 매핑 저장 + Gemini 분석
 
-#### 5. Slack Lists 생성
-- `lists.create` API로 채널에 Lists 탭 생성
-- 할 일 항목 추가 (담당자=Slack User ID, 마감일 포함)
-- **전제조건**: Slack 앱에 `lists:write` 스코프 추가 필요
-- **전제조건**: 유료 Slack 플랜 필요
-
-### 화자 매핑 설계 변경 사항
-- 기존: speakerLabel → userName (문자열 직접 입력)
-- 변경: speakerLabel → Slack User ID + userName 동시 저장
-- `SpeakerMappingEmbedded`에 `slackUserId` 필드 추가 필요
-- 결과 게시 시 `<@U12345>` 멘션으로 담당자 알림
+#### 5. Slack Lists 생성 (유료 플랜 필요)
+- `lists.create` API, `lists:write` 스코프 필요
 
 ### Meeting 엔티티 현황
-- `workspaceId`: 복원됨 (웹 앱에서 생성 시 필수, Slack 생성 시 null)
-- `channelId`, `startedAt`, `endedAt`: DB 컬럼만 유지, 코드에서 제거됨
-- 제거된 API: `PATCH /api/meetings/{id}/end` (endMeeting)
-- 접근제어: workspaceId 있으면 멤버십, 없으면 createdBy로 이중 처리
+- `workspaceId`: 앱에서 생성 시 필수, Slack 생성 시 null
+- `channelId`, `startedAt`, `endedAt`: DB 컬럼만 유지, 코드에서 미사용
+- 접근제어: workspaceId 있으면 멤버십, 없으면 createdBy 이중 처리
+
+### Slack vs 앱 API 분리 여부
+- **분리 불필요** — URL 네임스페이스만 구분
+  - `/api/...` — 앱 UI용 (JWT 인증 필수)
+  - `/slack/...` — Slack 이벤트/인터랙션 수신 (permitAll)
+- Slack 내부 로직은 기존 service 레이어 그대로 재사용
