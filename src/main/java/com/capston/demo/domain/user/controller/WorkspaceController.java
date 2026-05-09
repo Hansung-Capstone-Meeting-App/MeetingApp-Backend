@@ -61,6 +61,16 @@ public class WorkspaceController implements WorkspaceControllerDocs {
         return ResponseEntity.ok(workspaceService.getMembers(workspaceId, userDetails.getUserId()));
     }
 
+    // 워크스페이스 나가기 (owner 제외)
+    // DELETE /api/workspaces/{workspaceId}/members/me
+    @DeleteMapping("/{workspaceId}/members/me")
+    public ResponseEntity<Void> leaveWorkspace(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long workspaceId) {
+        workspaceService.leaveWorkspace(workspaceId, userDetails.getUserId());
+        return ResponseEntity.noContent().build();
+    }
+
     // 워크스페이스 삭제 (owner만 가능)
     // DELETE /api/workspaces/{workspaceId}
     @DeleteMapping("/{workspaceId}")

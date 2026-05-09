@@ -3,6 +3,7 @@ package com.capston.demo.domain.user.service;
 
 import com.capston.demo.domain.user.dto.UserProfileDto;
 import com.capston.demo.domain.user.dto.request.RegisterRequestDto;
+import com.capston.demo.domain.user.dto.response.UserSearchResponse;
 import com.capston.demo.domain.user.dto.request.UpdateUserNameRequestDto;
 import com.capston.demo.domain.user.dto.request.UpdateProfileImageRequestDto;
 import com.capston.demo.domain.user.dto.request.ChangePasswordRequestDto;
@@ -16,6 +17,9 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -104,6 +108,13 @@ public class UserService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         user.setStatus(User.UserStatus.deleted);
+    }
+
+    @Transactional(readOnly = true)
+    public List<UserSearchResponse> searchUsers(String q) {
+        if (q == null || q.trim().length() < 1) return List.of();
+        return userRepository.searchByNameOrEmail(q.trim())
+                .stream().map(UserSearchResponse::new).collect(Collectors.toList());
     }
 
     /**

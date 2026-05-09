@@ -1,13 +1,16 @@
 package com.capston.demo.domain.user.service;
 
+import com.capston.demo.domain.user.dto.workspace.InvitationResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceCreateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceInviteRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceMemberResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceResponse;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.entity.Workspace;
+import com.capston.demo.domain.user.entity.WorkspaceInvitation;
 import com.capston.demo.domain.user.entity.WorkspaceMember;
 import com.capston.demo.domain.user.repository.UserRepository;
+import com.capston.demo.domain.user.repository.WorkspaceInvitationRepository;
 import com.capston.demo.domain.user.repository.WorkspaceMemberRepository;
 import com.capston.demo.domain.user.repository.WorkspaceRepository;
 import com.capston.demo.global.exception.BusinessException;
@@ -26,6 +29,7 @@ public class WorkspaceService {
 
     private final WorkspaceRepository workspaceRepository;
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    private final WorkspaceInvitationRepository invitationRepository;
     private final UserRepository userRepository;
 
     @Transactional
@@ -37,7 +41,6 @@ public class WorkspaceService {
         Workspace workspace = new Workspace(request.getName(), slug, owner);
         workspaceRepository.save(workspace);
 
-        // 생성자를 owner 역할로 멤버에 자동 추가
         WorkspaceMember ownerMember = new WorkspaceMember(workspace, owner, WorkspaceMember.MemberRole.owner);
         workspaceMemberRepository.save(ownerMember);
 
@@ -51,8 +54,8 @@ public class WorkspaceService {
     }
 
     @Transactional
-    public void inviteMember(Long workspaceId, WorkspaceInviteRequest request, Long userId) {
-        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
+    public void inviteMember(Long workspaceId, WorkspaceInviteRequest request, Long inviterId) {
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, inviterId)) {
             throw new BusinessException(ErrorCode.NOT_WORKSPACE_MEMBER);
         }
         Workspace workspace = workspaceRepository.findById(workspaceId)
@@ -63,8 +66,66 @@ public class WorkspaceService {
         if (workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, invitee.getId())) {
             throw new BusinessException(ErrorCode.ALREADY_MEMBER);
         }
+        if (invitationRepository.existsByWorkspace_IdAndInvitee_IdAndStatus(
+                workspaceId, invitee.getId(), WorkspaceInvitation.InvitationStatus.PENDING)) {
+            throw new BusinessException(ErrorCode.ALREADY_INVITED);
+        }
 
-        workspaceMemberRepository.save(new WorkspaceMember(workspace, invitee));
+        User inviter = userRepository.findById(inviterId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+        invitationRepository.save(new WorkspaceInvitation(workspace, invitee, inviter));
+    }
+
+    @Transactional(readOnly = true)
+    public List<InvitationResponse> getPendingInvitations(Long userId) {
+        return invitationRepository
+                .findByInvitee_IdAndStatus(userId, WorkspaceInvitation.InvitationStatus.PENDING)
+                .stream().map(InvitationResponse::new).collect(Collectors.toList());
+    }
+
+    @Transactional
+    public void acceptInvitation(Long invitationId, Long userId) {
+        WorkspaceInvitation invitation = invitationRepository.findByIdAndInvitee_Id(invitationId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVITATION_NOT_FOUND));
+
+        if (invitation.getStatus() != WorkspaceInvitation.InvitationStatus.PENDING) {
+            throw new BusinessException(ErrorCode.INVITATION_ALREADY_PROCESSED);
+        }
+
+        invitation.accept();
+
+        Workspace workspace = invitation.getWorkspace();
+        User invitee = invitation.getInvitee();
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspace.getId(), invitee.getId())) {
+            workspaceMemberRepository.save(new WorkspaceMember(workspace, invitee));
+        }
+    }
+
+    @Transactional
+    public void declineInvitation(Long invitationId, Long userId) {
+        WorkspaceInvitation invitation = invitationRepository.findByIdAndInvitee_Id(invitationId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVITATION_NOT_FOUND));
+
+        if (invitation.getStatus() != WorkspaceInvitation.InvitationStatus.PENDING) {
+            throw new BusinessException(ErrorCode.INVITATION_ALREADY_PROCESSED);
+        }
+
+        invitation.decline();
+    }
+
+    @Transactional
+    public void leaveWorkspace(Long workspaceId, Long userId) {
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
+
+        if (workspace.getOwner().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.OWNER_CANNOT_LEAVE);
+        }
+        if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(workspaceId, userId)) {
+            throw new BusinessException(ErrorCode.NOT_WORKSPACE_MEMBER);
+        }
+
+        workspaceMemberRepository.deleteByWorkspace_IdAndUser_Id(workspaceId, userId);
     }
 
     @Transactional(readOnly = true)
@@ -89,8 +150,6 @@ public class WorkspaceService {
 
     private String generateUniqueSlug(String name) {
         String base = name.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
-        String slug = base + "-" + UUID.randomUUID().toString().substring(0, 8);
-        // slug unique 충돌은 UUID suffix가 사실상 막아주므로 별도 루프 불필요
-        return slug;
+        return base + "-" + UUID.randomUUID().toString().substring(0, 8);
     }
 }
