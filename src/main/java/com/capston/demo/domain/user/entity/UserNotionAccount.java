@@ -42,6 +42,10 @@ public class UserNotionAccount {
     @Column(name = "calendar_database_id", length = 100)
     private String calendarDatabaseId;
 
+    /** 회의록 export 대상 노션 데이터베이스 ID */
+    @Column(name = "meeting_notes_database_id", length = 100)
+    private String meetingNotesDatabaseId;
+
     // 나중에 여러 Notion 계정을 연결할 수 있게 하려면 isPrimary 같은 플래그도 둘 수 있음
 }
 

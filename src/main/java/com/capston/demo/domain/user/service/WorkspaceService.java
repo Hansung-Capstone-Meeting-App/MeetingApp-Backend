@@ -1,6 +1,7 @@
 package com.capston.demo.domain.user.service;
 
 import com.capston.demo.domain.user.dto.workspace.InvitationResponse;
+import com.capston.demo.domain.user.dto.workspace.InvitationCountResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceCreateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceInviteRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceMemberResponse;
@@ -81,6 +82,13 @@ public class WorkspaceService {
         return invitationRepository
                 .findByInvitee_IdAndStatus(userId, WorkspaceInvitation.InvitationStatus.PENDING)
                 .stream().map(InvitationResponse::new).collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public InvitationCountResponse getPendingInvitationCount(Long userId) {
+        long count = invitationRepository.countByInvitee_IdAndStatus(
+                userId, WorkspaceInvitation.InvitationStatus.PENDING);
+        return new InvitationCountResponse(count);
     }
 
     @Transactional
