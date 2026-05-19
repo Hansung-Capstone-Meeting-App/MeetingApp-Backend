@@ -30,6 +30,8 @@ public enum ErrorCode {
     // Meeting
     MEETING_NOT_FOUND(404, "회의를 찾을 수 없습니다"),
     MEETING_ACCESS_DENIED(403, "접근 권한이 없습니다"),
+    MEETING_EXPORT_NOT_READY(400, "AI 분석이 완료된 후 PDF를보낼 수 있습니다"), // transcript.summary 없음
+    PDF_GENERATION_FAILED(500, "PDF 생성 중 오류가 발생했습니다"),           // HTML/PDF 변환·폰트 로드 실패
 
     // Recording
     RECORDING_NOT_FOUND(404, "녹음 파일을 찾을 수 없습니다"),
@@ -50,7 +52,10 @@ public enum ErrorCode {
     OAUTH_INVALID_USER_INFO(400, "OAuth 계정에서 사용자 정보를 충분히 가져올 수 없습니다."),
 
     // Notion
-    NOTION_EVENT_CREATE_FAILED(400, "노션 캘린더에 일정을 생성하지 못했습니다. 데이터베이스 ID와 권한을 확인해주세요.");
+    NOTION_EVENT_CREATE_FAILED(400, "노션 캘린더에 일정을 생성하지 못했습니다. 데이터베이스 ID와 권한을 확인해주세요."),
+    NOTION_MEETING_NOTES_DB_NOT_REGISTERED(400, "회의록용 노션 데이터베이스를 먼저 등록해주세요."),
+    NOTION_MEETING_NOTES_EXPORT_FAILED(400, "노션에 회의록을보내지 못했습니다. 데이터베이스 ID·컬럼(Name, Date)과 권한을 확인해주세요."),
+    NOTION_ACCOUNT_NOT_LINKED(403, "Notion 계정이 연동되지 않았습니다.");
 
     private final int status;
     private final String message;

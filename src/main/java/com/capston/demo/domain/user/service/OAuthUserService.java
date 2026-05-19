@@ -33,13 +33,22 @@ public class OAuthUserService {
 
         String finalEmail = email;
         return userRepository.findByEmail(finalEmail) //이메일로 사용자 조회
-                .map(existingUser -> { //기존 사용자가 있으면 업데이트
-                    // 기존 사용자에 OAuth 제공자 정보만 덮어씌움 (계정 연결)
-                    existingUser.setOauthProvider(userInfo.getProvider());
-                    existingUser.setOauthProviderId(userInfo.getProviderId());
-                    existingUser.setOauthLinkedAt(LocalDateTime.now());
-                    if (userInfo.getPicture() != null && !userInfo.getPicture().isEmpty()) {
+                .map(existingUser -> { //이메일이 같으면 같은 계정으로 로그인 (users 행은 유지)
+                    // oauth_provider/id는 최초 가입 시에만 설정 — Google 후 Notion 로그인 시 덮어쓰지 않음
+                    // Notion API 연동은 OAuth2Controller → linkNotionAccount → user_notion_accounts
+                    if (existingUser.getOauthProvider() == null || existingUser.getOauthProvider().isBlank()) {
+                        existingUser.setOauthProvider(userInfo.getProvider());
+                        existingUser.setOauthProviderId(userInfo.getProviderId());
+                        existingUser.setOauthLinkedAt(LocalDateTime.now());
+                    }
+                    // 이름·프로필은 앱에서 수정 가능 — 비어 있을 때만 OAuth 값으로 채움
+                    if (isBlank(existingUser.getProfileImg())
+                            && userInfo.getPicture() != null && !userInfo.getPicture().isEmpty()) {
                         existingUser.setProfileImg(userInfo.getPicture());
+                    }
+                    if (isBlank(existingUser.getName())
+                            && userInfo.getName() != null && !userInfo.getName().isBlank()) {
+                        existingUser.setName(userInfo.getName());
                     }
                     return userRepository.save(existingUser);
                 })
@@ -55,6 +64,10 @@ public class OAuthUserService {
                     newUser.setOauthLinkedAt(LocalDateTime.now());
                     return userRepository.save(newUser);
                 });
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
     }
 }
 

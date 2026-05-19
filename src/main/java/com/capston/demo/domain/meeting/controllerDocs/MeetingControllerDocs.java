@@ -3,6 +3,7 @@ package com.capston.demo.domain.meeting.controllerDocs;
 import com.capston.demo.domain.meeting.dto.request.MeetingRequest;
 import com.capston.demo.domain.meeting.dto.request.SpeakerMappingRequest;
 import com.capston.demo.domain.meeting.dto.request.TranscriptRequest;
+import com.capston.demo.domain.meeting.dto.response.MeetingNotionExportResponse;
 import com.capston.demo.domain.meeting.dto.response.MeetingResponse;
 import com.capston.demo.domain.meeting.dto.response.MeetingSummaryResponse;
 import com.capston.demo.domain.meeting.dto.response.SpeakerMappingResponse;
@@ -73,6 +74,49 @@ public interface MeetingControllerDocs {
             }
     )
     ResponseEntity<MeetingSummaryResponse> getMeetingSummary(@AuthenticationPrincipal CustomUserDetails userDetails, Long id);
+
+    @Operation(
+            summary = "회의 리포트 PDF보내기",
+            description = "AI 분석이 완료된 회의의 요약·키워드·할일(·일정)을 PDF로 반환합니다.\n\n" +
+                    "- `includeEvents=false` 시 일정 섹션 제외\n" +
+                    "- 분석 전(summary 없음)이면 400",
+            parameters = {
+                    @Parameter(name = "id", description = "회의 ID", example = "1", required = true),
+                    @Parameter(name = "includeEvents", description = "일정 섹션 포함 여부", example = "true")
+            },
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "PDF 파일",
+                            content = @Content(mediaType = "application/pdf")),
+                    @ApiResponse(responseCode = "400", description = "AI 분석 미완료"),
+                    @ApiResponse(responseCode = "403", description = "접근 권한 없음"),
+                    @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음"),
+                    @ApiResponse(responseCode = "500", description = "PDF 생성 실패")
+            }
+    )
+    ResponseEntity<byte[]> exportMeetingPdf(@AuthenticationPrincipal CustomUserDetails userDetails,
+                                            Long id,
+                                            boolean includeEvents);
+
+    @Operation(
+            summary = "회의 리포트 Notion보내기",
+            description = "AI 분석이 완료된 회의의 요약·키워드·할일(·일정)을 Notion 회의록 DB에보냅니다.\n\n" +
+                    "- 사전 설정: Notion 연동 + `PUT /api/oauth2/notion/meeting-notes-database`\n" +
+                    "- Notion DB 컬럼: Name(title), Date(date) — 일정 DB와 동일\n" +
+                    "- 재전송 시 기존 Notion 페이지 본문을 갱신합니다.",
+            parameters = {
+                    @Parameter(name = "id", description = "회의 ID", example = "1", required = true),
+                    @Parameter(name = "includeEvents", description = "일정 섹션 포함 여부", example = "true")
+            },
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "보내기 성공 — notionPageId, notionUrl"),
+                    @ApiResponse(responseCode = "400", description = "AI 분석 미완료 또는 회의록 DB 미등록"),
+                    @ApiResponse(responseCode = "403", description = "접근 권한 없음 또는 Notion 미연동"),
+                    @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음")
+            }
+    )
+    ResponseEntity<MeetingNotionExportResponse> exportMeetingToNotion(@AuthenticationPrincipal CustomUserDetails userDetails,
+                                                                    Long id,
+                                                                    boolean includeEvents);
 
     @Operation(
             summary = "회의 삭제",
