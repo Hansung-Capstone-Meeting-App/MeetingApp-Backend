@@ -25,6 +25,10 @@ public class MeetingTranscript {
 
     private String fullText;
 
+    private String originalFullText;
+
+    private String correctedFullText;
+
     private String summary;
 
     private List<String> keywords = new ArrayList<>();
@@ -43,6 +47,8 @@ public class MeetingTranscript {
         private String speakerLabel;
         private Long userId;
         private String content;
+        private String originalContent;
+        private String correctedContent;
         private Float startSec;
         private Float endSec;
         private Integer sequence;

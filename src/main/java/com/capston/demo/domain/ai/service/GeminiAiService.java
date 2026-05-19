@@ -2,6 +2,7 @@ package com.capston.demo.domain.ai.service;
 
 import com.capston.demo.domain.ai.dto.internal.AssemblyAiTranscriptResult;
 import com.capston.demo.domain.ai.dto.internal.GeminiAnalysisResult;
+import com.capston.demo.domain.ai.dto.internal.GeminiCorrectionResult;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -37,6 +38,50 @@ public class GeminiAiService {
     private String model;
 
     private final ObjectMapper objectMapper;
+
+    public GeminiCorrectionResult correctTranscript(AssemblyAiTranscriptResult transcript) {
+        WebClient client = WebClient.builder()
+                .baseUrl(baseUrl)
+                .defaultHeader("Content-Type", "application/json")
+                .build();
+
+        ObjectNode body = objectMapper.createObjectNode();
+        ArrayNode contents = body.putArray("contents");
+        ObjectNode userContent = contents.addObject();
+        ArrayNode parts = userContent.putArray("parts");
+        parts.addObject().put("text", buildCorrectionPrompt(transcript));
+
+        ObjectNode generationConfig = body.putObject("generationConfig");
+        generationConfig.put("responseMimeType", "application/json");
+        generationConfig.put("temperature", 0.0);
+
+        JsonNode response;
+        try {
+            response = client.post()
+                    .uri(uriBuilder -> uriBuilder
+                            .path("/v1beta/models/{model}:generateContent")
+                            .queryParam("key", apiKey)
+                            .build(model))
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class)
+                    .block(Duration.ofSeconds(90));
+        } catch (WebClientResponseException e) {
+            throw new RuntimeException("[Gemini] correction request failed: HTTP " + e.getStatusCode().value()
+                    + " body=" + e.getResponseBodyAsString(), e);
+        }
+
+        if (response == null) {
+            throw new RuntimeException("[Gemini] correction response is null");
+        }
+
+        String text = response.path("candidates").path(0).path("content").path("parts").path(0).path("text").asText();
+        if (text == null || text.isBlank()) {
+            throw new RuntimeException("[Gemini] empty correction response body: " + response);
+        }
+
+        return parseCorrectionResponse(text, transcript);
+    }
 
     public GeminiAnalysisResult analyze(
             AssemblyAiTranscriptResult transcript,
@@ -85,6 +130,44 @@ public class GeminiAiService {
         }
 
         return parseResponse(text);
+    }
+
+    private String buildCorrectionPrompt(AssemblyAiTranscriptResult transcript) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("다음은 STT로 생성된 한국어 회의 전사문이다.\n");
+        sb.append("철자, 띄어쓰기, 어색한 조사, 문장부호만 자연스럽게 교정하라.\n");
+        sb.append("회의에서 말하지 않은 새 정보는 절대 추가하지 마라.\n");
+        sb.append("회의 내용이 협업툴, 일정관리, 문서관리, 개발도구 문맥이면 다음 STT 오인식 후보를 우선 보정하라.\n");
+        sb.append("- 노천, 노숀, 노션앱 -> 노션\n");
+        sb.append("- 구글 캘린다, 구글 캘린더 -> 구글 캘린더\n");
+        sb.append("- 몽고디비, 몽고 DB -> MongoDB\n");
+        sb.append("- 마이에스큐엘, 마이 SQL -> MySQL\n");
+        sb.append("- 슬렉, 슬랙 -> Slack\n");
+        sb.append("- 에스쓰리, S 쓰리 -> S3\n");
+        sb.append("단, 문맥상 실제 일반 명사로 쓰인 경우에는 강제 치환하지 말고 원문을 유지하라.\n");
+        sb.append("의미가 불확실한 단어, 고유명사, 기술명은 추측해서 바꾸지 말고 원문을 유지하라.\n");
+        sb.append("화자 레이블, 발화 순서, 시작/종료 시간은 원본과 동일하게 유지하라.\n");
+        sb.append("각 utterances 항목 수와 순서는 입력과 반드시 같아야 한다.\n");
+        sb.append("응답은 유효한 JSON만 반환하라. 설명 문장, 마크다운 코드블록, 추가 텍스트는 절대 포함하지 마라.\n\n");
+        sb.append("입력 회의록\n");
+
+        int index = 0;
+        for (AssemblyAiTranscriptResult.Utterance utterance : transcript.getUtterances()) {
+            sb.append(String.format(
+                    Locale.ROOT,
+                    "%d. speakerLabel=%s, startSec=%.3f, endSec=%.3f, text=%s%n",
+                    index++,
+                    utterance.getSpeaker(),
+                    utterance.getStartSec(),
+                    utterance.getEndSec(),
+                    utterance.getText()
+            ));
+        }
+
+        sb.append("\n아래 스키마에 맞는 JSON만 반환하라.\n");
+        sb.append("{\"correctedFullText\":\"string\",");
+        sb.append("\"utterances\":[{\"speakerLabel\":\"string\",\"originalText\":\"string\",\"correctedText\":\"string\",\"startSec\":0.0,\"endSec\":0.0}]}");
+        return sb.toString();
     }
 
     private String buildPrompt(
@@ -185,6 +268,67 @@ public class GeminiAiService {
         } catch (Exception e) {
             throw new RuntimeException("[Gemini] parse failed: " + e.getMessage(), e);
         }
+    }
+
+    private GeminiCorrectionResult parseCorrectionResponse(String text, AssemblyAiTranscriptResult original) {
+        try {
+            String json = unwrapJson(text);
+            JsonNode root = objectMapper.readTree(json.trim());
+            List<GeminiCorrectionResult.CorrectedUtterance> utterances = new ArrayList<>();
+            JsonNode returnedUtterances = root.path("utterances");
+
+            for (int i = 0; i < original.getUtterances().size(); i++) {
+                AssemblyAiTranscriptResult.Utterance source = original.getUtterances().get(i);
+                JsonNode corrected = returnedUtterances.isArray() && returnedUtterances.size() > i
+                        ? returnedUtterances.get(i)
+                        : null;
+
+                String correctedText = corrected == null
+                        ? source.getText()
+                        : corrected.path("correctedText").asText(source.getText());
+
+                utterances.add(new GeminiCorrectionResult.CorrectedUtterance(
+                        source.getSpeaker(),
+                        source.getText(),
+                        normalizeCorrectionText(correctedText, source.getText()),
+                        source.getStartSec(),
+                        source.getEndSec()
+                ));
+            }
+
+            String correctedFullText = root.path("correctedFullText").asText("");
+            if (correctedFullText.isBlank()) {
+                correctedFullText = buildCorrectedFullText(utterances);
+            }
+
+            return new GeminiCorrectionResult(correctedFullText, utterances);
+        } catch (Exception e) {
+            throw new RuntimeException("[Gemini] correction parse failed: " + e.getMessage(), e);
+        }
+    }
+
+    private String unwrapJson(String text) {
+        String json = text.trim();
+        if (json.contains("```json")) {
+            json = json.substring(json.indexOf("```json") + 7, json.lastIndexOf("```"));
+        } else if (json.contains("```")) {
+            json = json.substring(json.indexOf("```") + 3, json.lastIndexOf("```"));
+        }
+        return json;
+    }
+
+    private String normalizeCorrectionText(String correctedText, String fallback) {
+        if (correctedText == null || correctedText.isBlank()) {
+            return fallback;
+        }
+        return correctedText.trim().replaceAll("\\s+", " ");
+    }
+
+    private String buildCorrectedFullText(List<GeminiCorrectionResult.CorrectedUtterance> utterances) {
+        return utterances.stream()
+                .map(GeminiCorrectionResult.CorrectedUtterance::getCorrectedText)
+                .filter(text -> text != null && !text.isBlank())
+                .collect(java.util.stream.Collectors.joining(" "));
     }
 
     private List<Long> parseParticipantUserIds(JsonNode node) {
