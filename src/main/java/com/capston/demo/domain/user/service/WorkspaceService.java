@@ -39,7 +39,13 @@ public class WorkspaceService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
         String slug = generateUniqueSlug(request.getName());
-        Workspace workspace = new Workspace(request.getName(), slug, owner);
+        Workspace workspace = new Workspace(
+                request.getName(),
+                slug,
+                owner,
+                normalizeText(request.getMeetingCategory()),
+                normalizeText(request.getMeetingContext())
+        );
         workspaceRepository.save(workspace);
 
         WorkspaceMember ownerMember = new WorkspaceMember(workspace, owner, WorkspaceMember.MemberRole.owner);
@@ -159,5 +165,11 @@ public class WorkspaceService {
     private String generateUniqueSlug(String name) {
         String base = name.toLowerCase().replaceAll("[^a-z0-9]+", "-").replaceAll("^-|-$", "");
         return base + "-" + UUID.randomUUID().toString().substring(0, 8);
+    }
+
+    private String normalizeText(String value) {
+        if (value == null) return null;
+        String normalized = value.trim().replaceAll("\\s+", " ");
+        return normalized.isBlank() ? null : normalized;
     }
 }

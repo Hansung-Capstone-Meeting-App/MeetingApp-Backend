@@ -30,6 +30,7 @@ public class MeetingTranscriptService {
         transcript.setFullText(request.getFullText());
         transcript.setOriginalFullText(request.getFullText());
         transcript.setCorrectedFullText(request.getFullText());
+        transcript.setDisplayFullText(request.getFullText());
         transcript.setSummary(request.getSummary());
         transcript.setAnalyzedAt(LocalDateTime.now());
 
@@ -50,6 +51,7 @@ public class MeetingTranscriptService {
                 segment.setContent(segReq.getContent());
                 segment.setOriginalContent(segReq.getContent());
                 segment.setCorrectedContent(segReq.getContent());
+                segment.setDisplayContent(segReq.getContent());
                 segment.setStartSec(segReq.getStartSec());
                 segment.setEndSec(segReq.getEndSec());
                 segment.setSequence(segReq.getSequence());
