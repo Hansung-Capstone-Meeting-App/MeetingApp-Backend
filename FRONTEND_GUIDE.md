@@ -1,6 +1,8 @@
 # MeetingApp 프론트엔드 개발 가이드
 
-> 백엔드 API 기준 작성. 상세 요청/응답 스펙은 Swagger UI(`/swagger-ui/index.html`) 참고.
+> 백엔드 API 기준 작성. 상세 요청/응답 스펙은 Swagger UI(`/swagger-ui/index.html`) 참고.  
+> **기능·API 한눈에 보기:** [FRONTEND_FEATURES.md](./FRONTEND_FEATURES.md)  
+> **Notion 연동 상세:** [FRONTEND_NOTION_INTEGRATION.md](./FRONTEND_NOTION_INTEGRATION.md)
 
 ---
 
@@ -63,9 +65,15 @@ Authorization: Bearer {accessToken}
 3. 워크스페이스 목록 화면 이동
 
 **Google 로그인**
-1. Google OAuth 인가 코드 획득
-2. `POST /api/oauth2/google` 에 코드 전송
-3. 이후 동일하게 토큰 저장 후 이동
+1. `GET /api/oauth2/google/auth-url` → `authUrl`로 이동
+2. redirect의 `code` 획득
+3. `POST /api/oauth2/google/callback` body: `{ "code": "..." }` (또는 `GET /api/oauth2/google/callback?code=`)
+4. 토큰 저장 후 워크스페이스 목록 이동
+
+**Notion 로그인** (별도 로그인 화면이 있을 때)
+1. `GET /api/oauth2/notion/auth-url`
+2. `POST /api/oauth2/notion/callback` body: `{ "code": "..." }`
+3. Notion 계정 자동 연동됨 (캘린더·회의록 DB는 설정에서 추가 등록)
 
 **로그아웃**
 - `POST /api/auth/logout` (refreshToken 전송)
@@ -77,7 +85,7 @@ Authorization: Bearer {accessToken}
 
 **진입 시**
 1. `GET /api/workspaces` → 내가 속한 워크스페이스 목록 표시
-2. 상단 배지: `GET /api/invitations` 로 PENDING 초대 수 표시
+2. 상단 배지: `GET /api/invitations/count` → `{ "count": N }` (30~60초 폴링 권장, 푸시 없음)
 
 **워크스페이스 생성**
 1. 이름 입력
@@ -157,22 +165,25 @@ Authorization: Bearer {accessToken}
 ```
 [1] Presigned URL 발급
     POST /api/recordings/presigned-upload-url
-    body: { "meetingId": 1, "fileName": "meeting.m4a", "contentType": "audio/mp4" }
+    body: { "meetingId": 1, "filename": "meeting.m4a" }
     응답: { "recordingId": 5, "presignedUrl": "https://s3.amazonaws.com/..." }
 
 [2] S3 직접 업로드
     PUT {presignedUrl}
     body: 파일 바이너리 (Content-Type 헤더 포함)
-    → 백엔드 없이 S3에 직접 업로드
+    → 업로드 %는 프론트 XMLHttpRequest progress 로 표시
 
 [3] 상태 업데이트
-    PATCH /api/recordings/5/status
-    body: { "status": "UPLOADED" }
+    PATCH /api/recordings/5/status?status=UPLOADED
 
 [4] STT 시작
     POST /api/meetings/{meetingId}/recordings/5/transcribe
-    → 처리 시간 소요 (수십 초~수 분)
-    → 완료 응답 오면 트랜스크립트 화면으로 이동
+
+[5] 진행 폴링 (3~5초마다, COMPLETE/FAILED 까지)
+    GET /api/recordings/5/pipeline
+    → phase: UPLOADED → TRANSCRIBING → AWAITING_SPEAKER_MAPPING
+            → READY_FOR_ANALYSIS → COMPLETE
+    (간단히는 GET /api/recordings/5/status)
 ```
 
 **STT 완료 후 트랜스크립트 조회**
@@ -296,7 +307,24 @@ body: { "title": "변경된 제목" }  // 변경할 필드만
 
 ---
 
-### 12. 프로필
+### 12. 회의보내기 (PDF · Notion 회의록)
+
+> AI 분석 완료 후에만 가능 (summary 없으면 400).
+
+**PDF 다운로드**
+```
+GET /api/meetings/{meetingId}/export/pdf?includeEvents=true
+→ application/pdf (브라우저 다운로드)
+```
+
+**Notion 회의록**
+1. 사전: Notion 연동 + `PUT /api/oauth2/notion/meeting-notes-database`
+2. `POST /api/meetings/{meetingId}/notion-export?includeEvents=true`
+3. 응답: `notionUrl`, `updated`(재전송 시 true)
+
+---
+
+### 13. 프로필
 
 | 기능 | API |
 |------|-----|
@@ -347,4 +375,11 @@ AI 분석 실행 (Gemini)
   - 일정 목록 (수정 · 삭제 · 추가 가능)
     ↓
 캘린더에서 팀 전체 할일 · 일정 관리
+    ↓
+(선택) PDF / Notion 회의록 export
+    ↓
+(선택) Notion 캘린더 동기화 — [FRONTEND_NOTION_INTEGRATION.md](./FRONTEND_NOTION_INTEGRATION.md)
+```
+
+전체 API·폴링·체크리스트: [FRONTEND_FEATURES.md](./FRONTEND_FEATURES.md)
 ```

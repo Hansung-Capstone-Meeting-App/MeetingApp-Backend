@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<!-- 회의 PDF 리포트 템플릿 (MeetingExportService.TEMPLATE) — 변수: report -->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+    <meta charset="UTF-8"/>
+    <style>
+        @page {
+            size: A4;
+            margin: 18mm 16mm 20mm 16mm;
+        }
+        * {
+            box-sizing: border-box;
+            font-family: 'MalgunGothic';
+        }
+        body {
+            font-size: 10.5pt;
+            color: #1a1a1a;
+            line-height: 1.5;
+            margin: 0;
+        }
+        h1 {
+            font-size: 18pt;
+            font-weight: 700;
+            margin: 0 0 4px 0;
+            color: #111;
+        }
+        .meta {
+            font-size: 9pt;
+            color: #555;
+            margin-bottom: 20px;
+        }
+        .meta span + span::before {
+            content: " · ";
+        }
+        h2 {
+            font-size: 12pt;
+            font-weight: 700;
+            margin: 22px 0 8px 0;
+            padding-bottom: 4px;
+            border-bottom: 1px solid #ddd;
+            color: #222;
+        }
+        .summary {
+            white-space: pre-wrap;
+            margin: 0 0 10px 0;
+        }
+        .keywords {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+        .keywords li {
+            display: inline-block;
+            background: #f0f4f8;
+            color: #334;
+            padding: 2px 8px;
+            margin: 0 6px 6px 0;
+            border-radius: 4px;
+            font-size: 9pt;
+        }
+        .stats {
+            font-size: 9.5pt;
+            color: #444;
+            margin-bottom: 8px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 9.5pt;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+        th {
+            background: #f5f7fa;
+            font-weight: 700;
+        }
+        .col-status { width: 12%; }
+        .col-due { width: 18%; }
+        .col-assignee { width: 14%; }
+        .empty {
+            color: #888;
+            font-size: 9.5pt;
+            margin: 4px 0 0 0;
+        }
+        .footer {
+            margin-top: 28px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+            font-size: 8.5pt;
+            color: #888;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+<div th:object="${report}">
+    <p class="meta" th:if="*{workspaceName != null}" th:text="*{workspaceName}">워크스페이스</p>
+    <h1 th:text="*{meetingTitle}">회의 제목</h1>
+    <p class="meta">
+        <span th:text="'회의 생성: ' + *{meetingCreatedAt}">회의 생성</span>
+        <span th:if="*{analyzedAt != null and analyzedAt != '-'}"
+              th:text="'분석 완료: ' + *{analyzedAt}">분석 완료</span>
+    </p>
+
+    <h2>회의 요약</h2>
+    <p class="summary" th:text="*{summary}">요약</p>
+  <ul class="keywords" th:if="*{keywords != null and !keywords.isEmpty()}">
+        <li th:each="kw : *{keywords}" th:text="'#' + ${kw}">키워드</li>
+    </ul>
+
+    <h2 th:text="'할일 (' + *{taskTotal} + '건)'">할일</h2>
+    <p class="stats"
+       th:text="'할 일 ' + *{taskTodo} + ' · 진행 중 ' + *{taskInProgress} + ' · 완료 ' + *{taskDone}">
+        통계
+    </p>
+    <table th:if="*{tasks != null and !tasks.isEmpty()}">
+        <thead>
+        <tr>
+            <th class="col-status">상태</th>
+            <th>할일</th>
+            <th class="col-assignee">담당자</th>
+            <th class="col-due">마감일</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="task : *{tasks}">
+            <td th:text="${task.statusLabel}">할 일</td>
+            <td>
+                <span th:text="${task.title}">제목</span>
+                <br th:if="${task.description != null and !task.description.isEmpty()}"/>
+                <span th:if="${task.description != null and !task.description.isEmpty()}"
+                      style="color:#666;font-size:9pt;"
+                      th:text="${task.description}">설명</span>
+            </td>
+            <td th:text="${task.assigneeName}">담당자</td>
+            <td th:text="${task.dueDate}">마감일</td>
+        </tr>
+        </tbody>
+    </table>
+    <p class="empty" th:if="*{tasks == null or tasks.isEmpty()}">등록된 할일이 없습니다.</p>
+
+    <div th:if="*{includeEvents}">
+        <h2 th:text="'일정 (' + *{events.size()} + '건)'">일정</h2>
+        <table th:if="*{events != null and !events.isEmpty()}">
+            <thead>
+            <tr>
+                <th>일정</th>
+                <th>기간</th>
+                <th class="col-assignee">담당자</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="event : *{events}">
+                <td th:text="${event.title}">제목</td>
+                <td th:text="${event.period}">기간</td>
+                <td th:text="${event.assigneeName}">담당자</td>
+            </tr>
+            </tbody>
+        </table>
+        <p class="empty" th:if="*{events == null or events.isEmpty()}">등록된 일정이 없습니다.</p>
+    </div>
+
+    <p class="footer" th:text="'MeetingApp · PDF 생성: ' + *{exportedAt}">푸터</p>
+</div>
+</body>
+</html>

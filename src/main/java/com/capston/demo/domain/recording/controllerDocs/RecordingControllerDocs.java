@@ -3,7 +3,9 @@ package com.capston.demo.domain.recording.controllerDocs;
 import com.capston.demo.domain.meeting.entity.RecordingStatus;
 import com.capston.demo.domain.recording.dto.request.PresignedUploadRequest;
 import com.capston.demo.domain.recording.dto.response.PresignedUrlResponse;
+import com.capston.demo.domain.recording.dto.response.RecordingPipelineResponse;
 import com.capston.demo.domain.recording.dto.response.RecordingResponse;
+import com.capston.demo.domain.recording.dto.response.RecordingStatusResponse;
 import com.capston.demo.global.security.CustomUserDetails;
 import com.capston.demo.domain.recording.dto.request.RecordingFileUploadRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -74,6 +76,45 @@ public interface RecordingControllerDocs {
             }
     )
     ResponseEntity<RecordingResponse> updateStatus(Long recordingId, RecordingStatus status);
+
+    @Operation(
+            summary = "녹음 파이프라인 단계 조회(프론트 폴링용)",
+            description = """
+                    업로드·전사(STT)·화자 매핑·Gemini 분석까지 현재 단계를 한 번에 반환합니다.
+                    MySQL의 RecordingStatus만으로 구분되지 않는 구간은 Mongo 트랜스크립트(매핑·analyzedAt)를 조합해 계산(computed)합니다.
+
+                    phase 예시: UPLOADED → TRANSCRIBING → AWAITING_SPEAKER_MAPPING → READY_FOR_ANALYSIS → COMPLETE / FAILED
+                    """,
+            parameters = {
+                    @Parameter(name = "recordingId", description = "녹음 ID", example = "1", required = true)
+            },
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "조회 성공",
+                            content = @Content(schema = @Schema(implementation = RecordingPipelineResponse.class))),
+                    @ApiResponse(responseCode = "403", description = "회의 접근 권한 없음"),
+                    @ApiResponse(responseCode = "404", description = "녹음 파일을 찾을 수 없음")
+            }
+    )
+    ResponseEntity<RecordingPipelineResponse> getPipeline(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            Long recordingId);
+
+    @Operation(
+            summary = "녹음 처리 상태 조회(프론트 폴링용)",
+            description = "녹음 파일의 현재 처리 상태를 반환합니다. 프론트는 3~5초마다 이 API를 폴링해서 진행 상태를 갱신할 수 있습니다.\n\n" +
+                    "상태값: `UPLOADING` → `UPLOADED` → `PROCESSING` → `DONE` / `FAILED`",
+            parameters = {
+                    @Parameter(name = "recordingId", description = "녹음 ID", example = "1", required = true)
+            },
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "조회 성공",
+                            content = @Content(schema = @Schema(implementation = RecordingStatusResponse.class))),
+                    @ApiResponse(responseCode = "404", description = "녹음 파일을 찾을 수 없음")
+            }
+    )
+    ResponseEntity<RecordingStatusResponse> getStatus(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            Long recordingId);
 
     @Operation(
             summary = "S3 직접 업로드용 Presigned PUT URL 발급(거의 사용 안함)",

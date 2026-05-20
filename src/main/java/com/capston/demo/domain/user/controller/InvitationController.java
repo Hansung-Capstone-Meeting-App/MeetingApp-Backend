@@ -1,6 +1,7 @@
 package com.capston.demo.domain.user.controller;
 
 import com.capston.demo.domain.user.controllerDocs.InvitationControllerDocs;
+import com.capston.demo.domain.user.dto.workspace.InvitationCountResponse;
 import com.capston.demo.domain.user.dto.workspace.InvitationResponse;
 import com.capston.demo.domain.user.service.WorkspaceService;
 import com.capston.demo.global.security.CustomUserDetails;
@@ -23,6 +24,13 @@ public class InvitationController implements InvitationControllerDocs {
     public ResponseEntity<List<InvitationResponse>> getMyInvitations(
             @AuthenticationPrincipal CustomUserDetails userDetails) {
         return ResponseEntity.ok(workspaceService.getPendingInvitations(userDetails.getUserId()));
+    }
+
+    // GET /api/invitations/count
+    @GetMapping("/count")
+    public ResponseEntity<InvitationCountResponse> getMyInvitationCount(
+            @AuthenticationPrincipal CustomUserDetails userDetails) {
+        return ResponseEntity.ok(workspaceService.getPendingInvitationCount(userDetails.getUserId()));
     }
 
     // POST /api/invitations/{invitationId}/accept

@@ -1,5 +1,6 @@
 package com.capston.demo.domain.user.controllerDocs;
 
+import com.capston.demo.domain.user.dto.workspace.InvitationCountResponse;
 import com.capston.demo.domain.user.dto.workspace.InvitationResponse;
 import com.capston.demo.global.security.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +23,16 @@ public interface InvitationControllerDocs {
             }
     )
     ResponseEntity<List<InvitationResponse>> getMyInvitations(
+            @AuthenticationPrincipal CustomUserDetails userDetails);
+
+    @Operation(
+            summary = "받은 초대 개수 조회(배지용)",
+            description = "내게 온 PENDING 상태의 초대 개수만 빠르게 반환합니다. 프론트 배지/알림용으로 주기적 폴링에 적합합니다.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "조회 성공")
+            }
+    )
+    ResponseEntity<InvitationCountResponse> getMyInvitationCount(
             @AuthenticationPrincipal CustomUserDetails userDetails);
 
     @Operation(

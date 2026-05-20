@@ -77,7 +77,7 @@ public class GoogleOAuth2Service {
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-                String body = UriComponentsBuilder.newInstance()
+                String body = UriComponentsBuilder.newInstance() 
                         .queryParam("code", code)
                         .queryParam("client_id", clientId)
                         .queryParam("client_secret", clientSecret)

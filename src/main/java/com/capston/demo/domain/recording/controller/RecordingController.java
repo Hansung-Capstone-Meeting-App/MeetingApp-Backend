@@ -5,6 +5,9 @@ import com.capston.demo.domain.recording.controllerDocs.RecordingControllerDocs;
 import com.capston.demo.domain.recording.dto.request.PresignedUploadRequest;
 import com.capston.demo.domain.recording.dto.response.PresignedUrlResponse;
 import com.capston.demo.domain.recording.dto.response.RecordingResponse;
+import com.capston.demo.domain.recording.dto.response.RecordingPipelineResponse;
+import com.capston.demo.domain.recording.dto.response.RecordingStatusResponse;
+import com.capston.demo.domain.recording.service.RecordingPipelineService;
 import com.capston.demo.domain.recording.service.RecordingService;
 import com.capston.demo.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +25,7 @@ import java.util.List;
 public class RecordingController implements RecordingControllerDocs {
 
     private final RecordingService recordingService;
+    private final RecordingPipelineService recordingPipelineService;
 
     // 음성 파일 서버 경유 업로드 (multipart/form-data, form-part: file)
     // POST /api/recordings/upload?meetingId=1
@@ -46,6 +50,24 @@ public class RecordingController implements RecordingControllerDocs {
             @PathVariable Long recordingId,
             @RequestParam RecordingStatus status) {
         return ResponseEntity.ok(recordingService.updateStatus(recordingId, status));
+    }
+
+    // 녹음 파이프라인 단계 조회 (전사·매핑·분석까지 computed, 프론트 폴링용)
+    // GET /api/recordings/{recordingId}/pipeline
+    @GetMapping("/{recordingId}/pipeline")
+    public ResponseEntity<RecordingPipelineResponse> getPipeline(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long recordingId) {
+        return ResponseEntity.ok(recordingPipelineService.getPipeline(recordingId, userDetails.getUserId()));
+    }
+
+    // 녹음 처리 상태 조회 (프론트 폴링용)
+    // GET /api/recordings/{recordingId}/status
+    @GetMapping("/{recordingId}/status")
+    public ResponseEntity<RecordingStatusResponse> getStatus(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long recordingId) {
+        return ResponseEntity.ok(recordingService.getRecordingStatus(recordingId, userDetails.getUserId()));
     }
 
     // 클라이언트 직접 S3 업로드용 Presigned PUT URL 발급 (application/json, { meetingId, filename })

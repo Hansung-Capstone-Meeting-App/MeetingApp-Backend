@@ -50,6 +50,10 @@ dependencies {
     //mongoDB
     implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'
 
+    // PDF export (HTML → PDF)
+    implementation 'com.openhtmltopdf:openhtmltopdf-core:1.0.10'
+    implementation 'com.openhtmltopdf:openhtmltopdf-pdfbox:1.0.10'
+
     // Slack
     implementation 'com.slack.api:bolt:1.40.2'
     implementation 'com.slack.api:bolt-servlet:1.40.2'

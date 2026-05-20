@@ -8,6 +8,8 @@ import com.capston.demo.domain.meeting.repository.MeetingRepository;
 import com.capston.demo.domain.recording.dto.request.PresignedUploadRequest;
 import com.capston.demo.domain.recording.dto.response.PresignedUrlResponse;
 import com.capston.demo.domain.recording.dto.response.RecordingResponse;
+import com.capston.demo.domain.recording.dto.response.RecordingStatusResponse;
+import com.capston.demo.domain.user.repository.WorkspaceMemberRepository;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
 import com.capston.demo.global.util.S3Util;
@@ -42,6 +44,7 @@ public class RecordingService {
     private final S3Util s3Util;
     private final MeetingRepository meetingRepository;
     private final MeetingRecordingRepository recordingRepository;
+    private final WorkspaceMemberRepository workspaceMemberRepository;
 
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
@@ -117,6 +120,16 @@ public class RecordingService {
                 .collect(Collectors.toList());
     }
 
+    // ── 상태 조회 (프론트 폴링용) ───────────────────────────────────────────────
+
+    @Transactional(readOnly = true)
+    public RecordingStatusResponse getRecordingStatus(Long recordingId, Long userId) {
+        MeetingRecording recording = recordingRepository.findById(recordingId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
+        checkAccess(recording.getMeeting(), userId);
+        return new RecordingStatusResponse(recording);
+    }
+
     // ── 상태 업데이트 (STT 서버에서 호출) ─────────────────────────────────────
 
     @Transactional
@@ -187,5 +200,18 @@ public class RecordingService {
                 .build());
 
         recordingRepository.delete(recording);
+    }
+
+    // meeting.workspaceId 있으면 멤버십 체크, 없으면(Slack 생성) createdBy 체크
+    private void checkAccess(Meeting meeting, Long userId) {
+        if (meeting.getWorkspaceId() != null) {
+            if (!workspaceMemberRepository.existsByWorkspace_IdAndUser_Id(meeting.getWorkspaceId(), userId)) {
+                throw new BusinessException(ErrorCode.MEETING_ACCESS_DENIED);
+            }
+        } else {
+            if (!userId.equals(meeting.getCreatedBy())) {
+                throw new BusinessException(ErrorCode.MEETING_ACCESS_DENIED);
+            }
+        }
     }
 }
