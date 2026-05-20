@@ -22,6 +22,8 @@ import com.capston.demo.domain.meeting.repository.MeetingRecordingRepository;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
 import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoRepository;
 import com.capston.demo.domain.recording.service.RecordingService;
+import com.capston.demo.domain.user.entity.Workspace;
+import com.capston.demo.domain.user.repository.WorkspaceRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -52,6 +54,7 @@ public class MeetingAnalysisService {
     private final MeetingRecordingRepository recordingRepository;
     private final RecordingService recordingService;
     private final MeetingTranscriptMongoRepository transcriptRepository;
+    private final WorkspaceRepository workspaceRepository;
     private final EventRepository eventRepository;
     private final TaskRepository taskRepository;
     private final ObjectMapper objectMapper;
@@ -67,6 +70,7 @@ public class MeetingAnalysisService {
                 transcribeResponse.getTranscriptId(),
                 transcribeResponse.getOriginalFullText(),
                 transcribeResponse.getCorrectedFullText(),
+                transcribeResponse.getDisplayFullText(),
                 analyzeResponse.getSummary(),
                 analyzeResponse.getKeywords(),
                 analyzeResponse.getSavedTaskCount(),
@@ -89,9 +93,16 @@ public class MeetingAnalysisService {
 
         String audioUrl = recordingService.generateDownloadPresignedUrl(recordingId, userId).getPresignedUrl();
         AssemblyAiTranscriptResult stt = assemblyAiService.transcribe(audioUrl);
+        Workspace workspace = resolveWorkspace(meeting);
         GeminiCorrectionResult correction;
         try {
-            correction = geminiAiService.correctTranscript(stt);
+            correction = geminiAiService.correctTranscript(
+                    stt,
+                    workspace == null ? null : workspace.getMeetingCategory(),
+                    workspace == null ? null : workspace.getMeetingContext(),
+                    workspace == null ? null : workspace.getName(),
+                    meeting.getTitle()
+            );
         } catch (Exception e) {
             log.warn("Transcript correction failed. Falling back to original STT. meetingId={}, recordingId={}",
                     meetingId, recordingId, e);
@@ -103,6 +114,7 @@ public class MeetingAnalysisService {
         transcript.setRecordingId(recordingId);
         transcript.setOriginalFullText(stt.getFullText());
         transcript.setCorrectedFullText(correction.getCorrectedFullText());
+        transcript.setDisplayFullText(correction.getDisplayFullText());
         transcript.setFullText(correction.getCorrectedFullText());
 
         List<TranscribeResponse.SegmentInfo> segmentInfos = new ArrayList<>();
@@ -113,6 +125,8 @@ public class MeetingAnalysisService {
             segment.setSpeakerLabel(utterance.getSpeakerLabel());
             segment.setOriginalContent(utterance.getOriginalText());
             segment.setCorrectedContent(utterance.getCorrectedText());
+            segment.setDisplayContent(utterance.getDisplayText());
+            segment.setCorrections(toCorrectionEmbeddeds(utterance.getCorrections()));
             segment.setContent(utterance.getCorrectedText());
             segment.setStartSec((float) utterance.getStartSec());
             segment.setEndSec((float) utterance.getEndSec());
@@ -124,6 +138,8 @@ public class MeetingAnalysisService {
                     utterance.getCorrectedText(),
                     utterance.getOriginalText(),
                     utterance.getCorrectedText(),
+                    utterance.getDisplayText(),
+                    toCorrectionInfos(utterance.getCorrections()),
                     hasMeaningfulCorrection(utterance.getOriginalText(), utterance.getCorrectedText()),
                     (float) utterance.getStartSec(),
                     (float) utterance.getEndSec()
@@ -136,6 +152,7 @@ public class MeetingAnalysisService {
                 saved.getId(),
                 saved.getOriginalFullText(),
                 saved.getCorrectedFullText(),
+                saved.getDisplayFullText(),
                 segmentInfos
         );
     }
@@ -222,12 +239,55 @@ public class MeetingAnalysisService {
                         u.getSpeaker(),
                         u.getText(),
                         u.getText(),
+                        u.getText(),
+                        List.of(),
                         u.getStartSec(),
                         u.getEndSec()
                 ))
                 .collect(Collectors.toList());
 
-        return new GeminiCorrectionResult(stt.getFullText(), utterances);
+        return new GeminiCorrectionResult(stt.getFullText(), stt.getFullText(), utterances);
+    }
+
+    private Workspace resolveWorkspace(Meeting meeting) {
+        if (meeting.getWorkspaceId() == null) {
+            return null;
+        }
+        return workspaceRepository.findById(meeting.getWorkspaceId()).orElse(null);
+    }
+
+    private List<MeetingTranscript.CorrectionEmbedded> toCorrectionEmbeddeds(
+            List<GeminiCorrectionResult.CorrectionItem> corrections
+    ) {
+        List<MeetingTranscript.CorrectionEmbedded> result = new ArrayList<>();
+        if (corrections == null) {
+            return result;
+        }
+        for (GeminiCorrectionResult.CorrectionItem item : corrections) {
+            MeetingTranscript.CorrectionEmbedded correction = new MeetingTranscript.CorrectionEmbedded();
+            correction.setOriginal(item.getOriginal());
+            correction.setCorrected(item.getCorrected());
+            correction.setReason(item.getReason());
+            result.add(correction);
+        }
+        return result;
+    }
+
+    private List<TranscribeResponse.CorrectionInfo> toCorrectionInfos(
+            List<GeminiCorrectionResult.CorrectionItem> corrections
+    ) {
+        List<TranscribeResponse.CorrectionInfo> result = new ArrayList<>();
+        if (corrections == null) {
+            return result;
+        }
+        for (GeminiCorrectionResult.CorrectionItem item : corrections) {
+            result.add(new TranscribeResponse.CorrectionInfo(
+                    item.getOriginal(),
+                    item.getCorrected(),
+                    item.getReason()
+            ));
+        }
+        return result;
     }
 
     private boolean hasMeaningfulCorrection(String original, String corrected) {
