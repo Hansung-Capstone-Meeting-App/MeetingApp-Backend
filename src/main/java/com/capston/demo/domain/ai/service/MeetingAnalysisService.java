@@ -4,13 +4,9 @@ import com.capston.demo.domain.ai.dto.internal.AssemblyAiTranscriptResult;
 import com.capston.demo.domain.ai.dto.internal.GeminiAnalysisResult;
 import com.capston.demo.domain.ai.dto.response.GeminiAnalyzeResponse;
 import com.capston.demo.domain.ai.dto.response.TranscribeResponse;
-import com.capston.demo.domain.calender.entity.Event;
-import com.capston.demo.domain.calender.entity.EventParticipant;
-import com.capston.demo.domain.calender.entity.ParticipantStatus;
 import com.capston.demo.domain.calender.entity.Task;
 import com.capston.demo.domain.calender.entity.TaskSource;
 import com.capston.demo.domain.calender.entity.TaskStatus;
-import com.capston.demo.domain.calender.repository.EventRepository;
 import com.capston.demo.domain.calender.repository.TaskRepository;
 import com.capston.demo.domain.meeting.entity.Meeting;
 import com.capston.demo.domain.meeting.entity.MeetingRecording;
@@ -20,16 +16,13 @@ import com.capston.demo.domain.meeting.repository.MeetingRecordingRepository;
 import com.capston.demo.domain.meeting.repository.MeetingRepository;
 import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoRepository;
 import com.capston.demo.domain.recording.service.RecordingService;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.Set;
 import java.util.stream.Collectors;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
@@ -50,9 +43,7 @@ public class MeetingAnalysisService {
     private final MeetingRecordingRepository recordingRepository;
     private final RecordingService recordingService;
     private final MeetingTranscriptMongoRepository transcriptRepository;
-    private final EventRepository eventRepository;
     private final TaskRepository taskRepository;
-    private final ObjectMapper objectMapper;
 
     // ── 1단계: STT (AssemblyAI) ────────────────────────────────────────────────
 
@@ -151,15 +142,11 @@ public class MeetingAnalysisService {
         transcript.setKeywords(normalizeKeywords(analysis.getKeywords()));
 
         List<GeminiAnalysisResult.ExtractedTask> filteredTasks = filterTasks(analysis.getTasks());
-        List<GeminiAnalysisResult.ExtractedEvent> filteredEvents = filterEvents(analysis.getEvents());
-        logExtractedEvents(meeting.getId(), filteredEvents);
 
         // 재실행 시 기존 AI 생성 데이터 삭제 (중복 방지)
         taskRepository.deleteByMeetingIdAndSource(meeting.getId(), TaskSource.AI_GENERATED);
-        eventRepository.deleteByMeetingId(meeting.getId());
 
         saveTasks(meeting.getId(), meeting.getCreatedBy(), meeting.getWorkspaceId(), filteredTasks, speakerToUserId);
-        saveEvents(meeting.getId(), meeting.getCreatedBy(), meeting.getWorkspaceId(), filteredEvents);
 
         if (transcript.getRecordingId() != null) {
             recordingRepository.findById(transcript.getRecordingId())
@@ -171,8 +158,7 @@ public class MeetingAnalysisService {
         return new GeminiAnalyzeResponse(
                 analysis.getSummary(),
                 normalizeKeywords(analysis.getKeywords()),
-                filteredTasks.size(),
-                filteredEvents.size()
+                filteredTasks.size()
         );
     }
 
@@ -206,51 +192,6 @@ public class MeetingAnalysisService {
         }
     }
 
-    private void saveEvents(Long meetingId, Long createdBy, Long workspaceId, List<GeminiAnalysisResult.ExtractedEvent> events) {
-        for (GeminiAnalysisResult.ExtractedEvent extractedEvent : events) {
-            LocalDateTime startAt;
-            LocalDateTime endAt;
-
-            try {
-                startAt = LocalDateTime.parse(extractedEvent.getStartAt(), DT_FMT);
-                endAt = LocalDateTime.parse(extractedEvent.getEndAt(), DT_FMT);
-            } catch (Exception ignored) {
-                log.warn("Invalid event datetime format. startAt={}, endAt={}",
-                        extractedEvent.getStartAt(), extractedEvent.getEndAt());
-                continue;
-            }
-
-            if (endAt.isBefore(startAt)) {
-                log.warn("Event endAt is before startAt. title={}, startAt={}, endAt={}",
-                        extractedEvent.getTitle(), extractedEvent.getStartAt(), extractedEvent.getEndAt());
-                continue;
-            }
-
-            Event event = new Event();
-            event.setMeetingId(meetingId);
-            event.setWorkspaceId(workspaceId);
-            event.setCreatedBy(createdBy);
-            event.setCreatedByName(extractedEvent.getCreatedByName());
-            event.setTitle(extractedEvent.getTitle());
-            event.setDescription(normalizeText(extractedEvent.getDescription()));
-            event.setLocation(normalizeText(extractedEvent.getLocation()));
-            event.setStartAt(startAt);
-            event.setEndAt(endAt);
-            event.setIsAllDay(Boolean.TRUE.equals(extractedEvent.getIsAllDay()));
-            event.setColor("blue");
-
-            for (Long participantUserId : resolveParticipantUserIds(extractedEvent)) {
-                EventParticipant participant = new EventParticipant();
-                participant.setEvent(event);
-                participant.setUserId(participantUserId);
-                participant.setStatus(ParticipantStatus.PENDING);
-                event.getParticipants().add(participant);
-            }
-
-            eventRepository.save(event);
-        }
-    }
-
     private List<String> normalizeKeywords(List<String> keywords) {
         List<String> normalized = new ArrayList<>();
         if (keywords == null) return normalized;
@@ -281,61 +222,9 @@ public class MeetingAnalysisService {
         return filtered;
     }
 
-    private List<GeminiAnalysisResult.ExtractedEvent> filterEvents(List<GeminiAnalysisResult.ExtractedEvent> events) {
-        List<GeminiAnalysisResult.ExtractedEvent> filtered = new ArrayList<>();
-        if (events == null) return filtered;
-        for (GeminiAnalysisResult.ExtractedEvent event : events) {
-            if (event == null) continue;
-            String title = normalizeText(event.getTitle());
-            String startAt = normalizeText(event.getStartAt());
-            String endAt = normalizeText(event.getEndAt());
-            if (title == null || startAt == null || endAt == null) continue;
-            filtered.add(new GeminiAnalysisResult.ExtractedEvent(
-                    normalizeText(event.getSpeakerLabel()),
-                    event.getUserId(),
-                    normalizeText(event.getCreatedByName()),
-                    deduplicateParticipantUserIds(event.getParticipantUserIds()),
-                    title,
-                    normalizeText(event.getDescription()),
-                    normalizeText(event.getLocation()),
-                    startAt,
-                    endAt,
-                    event.getIsAllDay()
-            ));
-        }
-        return filtered;
-    }
-
     private LocalDate resolveMeetingDate(Meeting meeting) {
         if (meeting.getCreatedAt() != null) return meeting.getCreatedAt().toLocalDate();
         return LocalDate.now();
-    }
-
-    private void logExtractedEvents(Long meetingId, List<GeminiAnalysisResult.ExtractedEvent> events) {
-        try {
-            log.info("Extracted events. meetingId={}, count={}, events={}",
-                    meetingId,
-                    events == null ? 0 : events.size(),
-                    objectMapper.writeValueAsString(events == null ? List.of() : events));
-        } catch (Exception e) {
-            log.warn("Failed to serialize extracted events. meetingId={}", meetingId, e);
-        }
-    }
-
-    private List<Long> deduplicateParticipantUserIds(List<Long> participantUserIds) {
-        List<Long> deduplicated = new ArrayList<>();
-        if (participantUserIds == null) return deduplicated;
-        for (Long id : participantUserIds) {
-            if (id == null || deduplicated.contains(id)) continue;
-            deduplicated.add(id);
-        }
-        return deduplicated;
-    }
-
-    private List<Long> resolveParticipantUserIds(GeminiAnalysisResult.ExtractedEvent event) {
-        Set<Long> ids = new LinkedHashSet<>(deduplicateParticipantUserIds(event.getParticipantUserIds()));
-        if (event.getUserId() != null) ids.add(event.getUserId());
-        return new ArrayList<>(ids);
     }
 
     private String normalizeText(String value) {

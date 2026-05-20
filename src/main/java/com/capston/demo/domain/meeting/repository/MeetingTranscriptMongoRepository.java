@@ -13,4 +13,5 @@ public interface MeetingTranscriptMongoRepository extends MongoRepository<Meetin
     List<MeetingTranscript> findByMeetingIdOrderByCreatedAtDesc(Long meetingId);
 
     Optional<MeetingTranscript> findTopByRecordingIdOrderByCreatedAtDesc(Long recordingId);
+    void deleteByMeetingIdIn(List<Long> meetingIds);
 }

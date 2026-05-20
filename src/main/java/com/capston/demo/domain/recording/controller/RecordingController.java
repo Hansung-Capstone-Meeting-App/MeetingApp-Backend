@@ -31,16 +31,19 @@ public class RecordingController implements RecordingControllerDocs {
     // POST /api/recordings/upload?meetingId=1
     @PostMapping("/upload")
     public ResponseEntity<RecordingResponse> upload(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestParam Long meetingId,
             @RequestPart("file") MultipartFile file) throws IOException {
-        return ResponseEntity.ok(recordingService.upload(meetingId, file));
+        return ResponseEntity.ok(recordingService.upload(meetingId, userDetails.getUserId(), file));
     }
 
     // 특정 회의의 녹음 목록 조회
     // GET /api/recordings?meetingId=1
     @GetMapping
-    public ResponseEntity<List<RecordingResponse>> getRecordingsByMeeting(@RequestParam Long meetingId) {
-        return ResponseEntity.ok(recordingService.getRecordingsByMeeting(meetingId));
+    public ResponseEntity<List<RecordingResponse>> getRecordingsByMeeting(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @RequestParam Long meetingId) {
+        return ResponseEntity.ok(recordingService.getRecordingsByMeeting(meetingId, userDetails.getUserId()));
     }
 
     // 녹음 처리 상태 변경 (STT 서버에서 호출)
@@ -74,8 +77,9 @@ public class RecordingController implements RecordingControllerDocs {
     // POST /api/recordings/presigned-upload-url
     @PostMapping("/presigned-upload-url")
     public ResponseEntity<PresignedUrlResponse> getUploadPresignedUrl(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
             @RequestBody PresignedUploadRequest request) {
-        return ResponseEntity.ok(recordingService.generateUploadPresignedUrl(request));
+        return ResponseEntity.ok(recordingService.generateUploadPresignedUrl(request, userDetails.getUserId()));
     }
 
     // 녹음 파일 재생/다운로드용 Presigned GET URL 발급 (유효시간 1시간)

@@ -1,5 +1,11 @@
 package com.capston.demo.domain.user.service;
 
+import com.capston.demo.domain.calender.repository.EventRepository;
+import com.capston.demo.domain.calender.repository.TaskRepository;
+import com.capston.demo.domain.meeting.entity.Meeting;
+import com.capston.demo.domain.meeting.entity.MeetingRecording;
+import com.capston.demo.domain.meeting.repository.MeetingRepository;
+import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoRepository;
 import com.capston.demo.domain.user.dto.workspace.InvitationResponse;
 import com.capston.demo.domain.user.dto.workspace.InvitationCountResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceCreateRequest;
@@ -17,13 +23,18 @@ import com.capston.demo.domain.user.repository.WorkspaceRepository;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class WorkspaceService {
@@ -32,6 +43,14 @@ public class WorkspaceService {
     private final WorkspaceMemberRepository workspaceMemberRepository;
     private final WorkspaceInvitationRepository invitationRepository;
     private final UserRepository userRepository;
+    private final MeetingRepository meetingRepository;
+    private final MeetingTranscriptMongoRepository transcriptRepository;
+    private final TaskRepository taskRepository;
+    private final EventRepository eventRepository;
+    private final S3Client s3Client;
+
+    @Value("${cloud.aws.s3.bucket}")
+    private String bucket;
 
     @Transactional
     public WorkspaceResponse createWorkspace(WorkspaceCreateRequest request, Long userId) {
@@ -152,6 +171,37 @@ public class WorkspaceService {
         if (!workspace.getOwner().getId().equals(userId)) {
             throw new BusinessException(ErrorCode.WORKSPACE_OWNER_REQUIRED);
         }
+
+        List<Meeting> meetings = meetingRepository.findByWorkspaceIdOrderByCreatedAtDesc(workspaceId);
+        List<Long> meetingIds = meetings.stream().map(Meeting::getId).collect(Collectors.toList());
+
+        // S3 오디오 파일 삭제
+        for (Meeting meeting : meetings) {
+            for (MeetingRecording recording : meeting.getRecordings()) {
+                try {
+                    s3Client.deleteObject(DeleteObjectRequest.builder()
+                            .bucket(recording.getS3Bucket())
+                            .key(recording.getS3Key())
+                            .build());
+                } catch (Exception e) {
+                    log.warn("S3 파일 삭제 실패. key={}", recording.getS3Key(), e);
+                }
+            }
+        }
+
+        // MongoDB 트랜스크립트 삭제
+        if (!meetingIds.isEmpty()) {
+            transcriptRepository.deleteByMeetingIdIn(meetingIds);
+        }
+
+        // tasks, events 삭제 (event_participants는 CascadeType.ALL로 자동 삭제)
+        taskRepository.deleteByWorkspaceId(workspaceId);
+        eventRepository.deleteByWorkspaceId(workspaceId);
+
+        // meetings 삭제 (meeting_recordings는 CascadeType.ALL로 자동 삭제)
+        meetingRepository.deleteAll(meetings);
+
+        invitationRepository.deleteByWorkspace_Id(workspaceId);
         workspaceMemberRepository.deleteByWorkspace_Id(workspaceId);
         workspaceRepository.delete(workspace);
     }

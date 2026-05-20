@@ -9,4 +9,5 @@ public interface TaskRepository extends JpaRepository<Task, Long> {
     List<Task> findByWorkspaceId(Long workspaceId);
     List<Task> findByAssigneeId(Long assigneeId);
     void deleteByMeetingIdAndSource(Long meetingId, TaskSource source);
+    void deleteByWorkspaceId(Long workspaceId);
 }

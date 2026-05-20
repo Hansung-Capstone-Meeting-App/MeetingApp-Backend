@@ -54,11 +54,12 @@ public class RecordingService {
     // ── 서버 경유 업로드 ────────────────────────────────────────────────────────
 
     @Transactional
-    public RecordingResponse upload(Long meetingId, MultipartFile file) throws IOException {
+    public RecordingResponse upload(Long meetingId, Long userId, MultipartFile file) throws IOException {
         s3Util.validateAudioFile(file);
 
         Meeting meeting = meetingRepository.findById(meetingId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        checkAccess(meeting, userId);
 
         String s3Key = s3Util.generateKey(meetingId, file.getOriginalFilename());
 
@@ -114,7 +115,10 @@ public class RecordingService {
     // ── 목록 조회 ──────────────────────────────────────────────────────────────
 
     @Transactional(readOnly = true)
-    public List<RecordingResponse> getRecordingsByMeeting(Long meetingId) {
+    public List<RecordingResponse> getRecordingsByMeeting(Long meetingId, Long userId) {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        checkAccess(meeting, userId);
         return recordingRepository.findByMeetingId(meetingId).stream()
                 .map(RecordingResponse::new)
                 .collect(Collectors.toList());
@@ -142,9 +146,10 @@ public class RecordingService {
 
     // ── Presigned PUT URL (클라이언트 직접 S3 업로드용) ─────────────────────────
 
-    public PresignedUrlResponse generateUploadPresignedUrl(PresignedUploadRequest request) {
-        meetingRepository.findById(request.getMeetingId())
+    public PresignedUrlResponse generateUploadPresignedUrl(PresignedUploadRequest request, Long userId) {
+        Meeting meeting = meetingRepository.findById(request.getMeetingId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        checkAccess(meeting, userId);
 
         String s3Key = s3Util.generateKey(request.getMeetingId(), request.getFilename());
 
@@ -167,9 +172,7 @@ public class RecordingService {
     public PresignedUrlResponse generateDownloadPresignedUrl(Long recordingId, Long userId) {
         MeetingRecording recording = recordingRepository.findById(recordingId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
-        if (!recording.getMeeting().getCreatedBy().equals(userId)) {
-            throw new BusinessException(ErrorCode.RECORDING_NOT_FOUND);
-        }
+        checkAccess(recording.getMeeting(), userId);
 
         PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(
                 GetObjectPresignRequest.builder()
@@ -190,9 +193,7 @@ public class RecordingService {
     public void deleteRecording(Long recordingId, Long userId) {
         MeetingRecording recording = recordingRepository.findById(recordingId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
-        if (!recording.getMeeting().getCreatedBy().equals(userId)) {
-            throw new BusinessException(ErrorCode.RECORDING_NOT_FOUND);
-        }
+        checkAccess(recording.getMeeting(), userId);
 
         s3Client.deleteObject(DeleteObjectRequest.builder()
                 .bucket(recording.getS3Bucket())

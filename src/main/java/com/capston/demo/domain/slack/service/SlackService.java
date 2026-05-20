@@ -469,7 +469,7 @@ public class SlackService {
             StringBuilder sb = new StringBuilder();
             sb.append(String.format("*[회의 분석 완료]* _%s_\n\n", meetingTitle));
             sb.append(String.format("*요약*\n%s\n\n", analysis.getSummary()));
-            sb.append(String.format("*생성된 이벤트*: %d건\n", analysis.getSavedEventCount()));
+            sb.append(String.format("*생성된 할일*: %d건\n", analysis.getSavedTaskCount()));
 
             if (!tasks.isEmpty()) {
                 Map<String, List<Task>> byAssignee = new LinkedHashMap<>();

@@ -10,5 +10,4 @@ public class GeminiAnalyzeResponse {
     private String summary;
     private List<String> keywords;
     private int savedTaskCount;
-    private int savedEventCount;
 }

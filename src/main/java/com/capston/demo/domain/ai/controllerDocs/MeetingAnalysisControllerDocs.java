@@ -38,8 +38,7 @@ public interface MeetingAnalysisControllerDocs {
                     "**분석 결과**\n" +
                     "- 회의 요약\n" +
                     "- 키워드 추출\n" +
-                    "- 할 일(Task) 자동 추출 → DB 저장\n" +
-                    "- 이벤트(Event) 자동 추출 → DB 저장",
+                    "- 할 일(Task) 자동 추출 → DB 저장 (담당자·마감일 포함)",
             parameters = {
                     @Parameter(name = "transcriptId", description = "트랜스크립트 ID (MongoDB ObjectId)", example = "6634c1a2f3e4b12345678901", required = true)
             },

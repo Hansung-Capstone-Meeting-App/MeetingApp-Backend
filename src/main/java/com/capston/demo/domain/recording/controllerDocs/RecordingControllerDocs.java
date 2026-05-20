@@ -48,7 +48,7 @@ public interface RecordingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음")
             }
     )
-    ResponseEntity<RecordingResponse> upload(Long meetingId, MultipartFile file) throws IOException;
+    ResponseEntity<RecordingResponse> upload(CustomUserDetails userDetails, Long meetingId, MultipartFile file) throws IOException;
 
     @Operation(
             summary = "회의별 녹음 목록 조회",
@@ -60,7 +60,7 @@ public interface RecordingControllerDocs {
                     @ApiResponse(responseCode = "200", description = "조회 성공")
             }
     )
-    ResponseEntity<List<RecordingResponse>> getRecordingsByMeeting(Long meetingId);
+    ResponseEntity<List<RecordingResponse>> getRecordingsByMeeting(CustomUserDetails userDetails, Long meetingId);
 
     @Operation(
             summary = "녹음 처리 상태 변경",
@@ -159,7 +159,7 @@ public interface RecordingControllerDocs {
                     @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음")
             }
     )
-    ResponseEntity<PresignedUrlResponse> getUploadPresignedUrl(PresignedUploadRequest request);
+    ResponseEntity<PresignedUrlResponse> getUploadPresignedUrl(CustomUserDetails userDetails, PresignedUploadRequest request);
 
     @Operation(
             summary = "녹음 파일 재생/다운로드용 Presigned GET URL 발급",

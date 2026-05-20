@@ -9,4 +9,5 @@ public interface EventRepository extends JpaRepository<Event, Long> {
     List<Event> findByWorkspaceIdAndCreatedBy(Long workspaceId, Long createdBy);
     long countByMeetingId(Long meetingId);
     void deleteByMeetingId(Long meetingId);
+    void deleteByWorkspaceId(Long workspaceId);
 }
