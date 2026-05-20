@@ -27,12 +27,6 @@ public class Workspace {
     @JoinColumn(name = "owner_id")
     private User owner;
 
-    @Column(name = "meeting_category", length = 100)
-    private String meetingCategory;
-
-    @Column(name = "meeting_context", length = 1000)
-    private String meetingContext;
-
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt = LocalDateTime.now();
 
@@ -41,13 +35,5 @@ public class Workspace {
         this.name = name;
         this.slug = slug;
         this.owner = owner;
-    }
-
-    public Workspace(String name, String slug, User owner, String meetingCategory, String meetingContext) {
-        this.name = name;
-        this.slug = slug;
-        this.owner = owner;
-        this.meetingCategory = meetingCategory;
-        this.meetingContext = meetingContext;
     }
 }

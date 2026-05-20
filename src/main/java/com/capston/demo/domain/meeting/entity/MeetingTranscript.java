@@ -25,12 +25,6 @@ public class MeetingTranscript {
 
     private String fullText;
 
-    private String originalFullText;
-
-    private String correctedFullText;
-
-    private String displayFullText;
-
     private String summary;
 
     private List<String> keywords = new ArrayList<>();
@@ -49,21 +43,9 @@ public class MeetingTranscript {
         private String speakerLabel;
         private Long userId;
         private String content;
-        private String originalContent;
-        private String correctedContent;
-        private String displayContent;
-        private List<CorrectionEmbedded> corrections = new ArrayList<>();
         private Float startSec;
         private Float endSec;
         private Integer sequence;
-    }
-
-    @Getter
-    @Setter
-    public static class CorrectionEmbedded {
-        private String original;
-        private String corrected;
-        private String reason;
     }
 
     @Getter

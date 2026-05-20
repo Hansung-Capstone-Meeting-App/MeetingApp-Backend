@@ -13,8 +13,6 @@ public class WorkspaceResponse {
     private final String slug;
     private final Long ownerId;
     private final String ownerName;
-    private final String meetingCategory;
-    private final String meetingContext;
     private final LocalDateTime createdAt;
 
     public WorkspaceResponse(Workspace workspace) {
@@ -23,8 +21,6 @@ public class WorkspaceResponse {
         this.slug = workspace.getSlug();
         this.ownerId = workspace.getOwner().getId();
         this.ownerName = workspace.getOwner().getName();
-        this.meetingCategory = workspace.getMeetingCategory();
-        this.meetingContext = workspace.getMeetingContext();
         this.createdAt = workspace.getCreatedAt();
     }
 }

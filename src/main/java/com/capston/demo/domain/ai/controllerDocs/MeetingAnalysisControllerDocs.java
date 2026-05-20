@@ -1,7 +1,6 @@
 package com.capston.demo.domain.ai.controllerDocs;
 
 import com.capston.demo.domain.ai.dto.response.GeminiAnalyzeResponse;
-import com.capston.demo.domain.ai.dto.response.MeetingAnalyzeResponse;
 import com.capston.demo.domain.ai.dto.response.TranscribeResponse;
 import com.capston.demo.global.security.CustomUserDetails;
 import io.swagger.v3.oas.annotations.Operation;
@@ -13,28 +12,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 
 @Tag(name = "AI Analysis", description = "STT 전사 및 Gemini AI 분석 API")
 public interface MeetingAnalysisControllerDocs {
-
-    @Operation(
-            summary = "회의 통합 분석",
-            description = "녹음 파일을 한 번의 요청으로 전사, 문장 교정, Gemini 분석까지 실행합니다.\n\n" +
-                    "**처리 결과**\n" +
-                    "- AssemblyAI 전사\n" +
-                    "- Gemini 문장/철자 교정\n" +
-                    "- 교정 전/후 트랜스크립트 저장\n" +
-                    "- 요약, 키워드, 할 일(Task), 일정(Event) 추출 및 저장",
-            parameters = {
-                    @Parameter(name = "meetingId", description = "회의 ID", example = "1", required = true),
-                    @Parameter(name = "recordingId", description = "녹음 ID", example = "1", required = true)
-            },
-            responses = {
-                    @ApiResponse(responseCode = "200", description = "통합 분석 성공"),
-                    @ApiResponse(responseCode = "404", description = "회의 또는 녹음 파일을 찾을 수 없음")
-            }
-    )
-    ResponseEntity<MeetingAnalyzeResponse> analyzeRecording(
-            @AuthenticationPrincipal CustomUserDetails userDetails,
-            Long meetingId,
-            Long recordingId);
 
     @Operation(
             summary = "STT 전사 (AssemblyAI)",
