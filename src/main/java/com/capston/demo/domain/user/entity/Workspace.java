@@ -50,4 +50,10 @@ public class Workspace {
         this.meetingCategory = meetingCategory;
         this.meetingContext = meetingContext;
     }
+
+    public void update(String name, String meetingCategory, String meetingContext) {
+        if (name != null && !name.isBlank()) this.name = name;
+        this.meetingCategory = meetingCategory;
+        this.meetingContext = meetingContext;
+    }
 }

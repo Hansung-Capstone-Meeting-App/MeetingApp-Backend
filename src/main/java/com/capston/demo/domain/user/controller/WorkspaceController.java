@@ -3,6 +3,7 @@ package com.capston.demo.domain.user.controller;
 import com.capston.demo.domain.user.controllerDocs.WorkspaceControllerDocs;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceCreateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceInviteRequest;
+import com.capston.demo.domain.user.dto.workspace.WorkspaceUpdateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceMemberResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceResponse;
 import com.capston.demo.domain.user.service.WorkspaceService;
@@ -59,6 +60,16 @@ public class WorkspaceController implements WorkspaceControllerDocs {
             @AuthenticationPrincipal CustomUserDetails userDetails,
             @PathVariable Long workspaceId) {
         return ResponseEntity.ok(workspaceService.getMembers(workspaceId, userDetails.getUserId()));
+    }
+
+    // 워크스페이스 이름/카테고리 수정 (owner만 가능)
+    // PATCH /api/workspaces/{workspaceId}
+    @PatchMapping("/{workspaceId}")
+    public ResponseEntity<WorkspaceResponse> updateWorkspace(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long workspaceId,
+            @RequestBody WorkspaceUpdateRequest request) {
+        return ResponseEntity.ok(workspaceService.updateWorkspace(workspaceId, request, userDetails.getUserId()));
     }
 
     // 워크스페이스 나가기 (owner 제외)

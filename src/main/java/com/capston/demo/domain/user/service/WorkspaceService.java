@@ -10,6 +10,7 @@ import com.capston.demo.domain.user.dto.workspace.InvitationResponse;
 import com.capston.demo.domain.user.dto.workspace.InvitationCountResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceCreateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceInviteRequest;
+import com.capston.demo.domain.user.dto.workspace.WorkspaceUpdateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceMemberResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceResponse;
 import com.capston.demo.domain.user.entity.User;
@@ -70,6 +71,21 @@ public class WorkspaceService {
         WorkspaceMember ownerMember = new WorkspaceMember(workspace, owner, WorkspaceMember.MemberRole.owner);
         workspaceMemberRepository.save(ownerMember);
 
+        return new WorkspaceResponse(workspace);
+    }
+
+    @Transactional
+    public WorkspaceResponse updateWorkspace(Long workspaceId, WorkspaceUpdateRequest request, Long userId) {
+        Workspace workspace = workspaceRepository.findById(workspaceId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WORKSPACE_NOT_FOUND));
+        if (!workspace.getOwner().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.WORKSPACE_OWNER_REQUIRED);
+        }
+        workspace.update(
+                normalizeText(request.getName()),
+                normalizeText(request.getMeetingCategory()),
+                normalizeText(request.getMeetingContext())
+        );
         return new WorkspaceResponse(workspace);
     }
 

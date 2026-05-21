@@ -2,6 +2,7 @@ package com.capston.demo.domain.user.controllerDocs;
 
 import com.capston.demo.domain.user.dto.workspace.WorkspaceCreateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceInviteRequest;
+import com.capston.demo.domain.user.dto.workspace.WorkspaceUpdateRequest;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceMemberResponse;
 import com.capston.demo.domain.user.dto.workspace.WorkspaceResponse;
 import com.capston.demo.global.security.CustomUserDetails;
@@ -105,6 +106,40 @@ public interface WorkspaceControllerDocs {
     ResponseEntity<List<WorkspaceMemberResponse>> getMembers(
             @AuthenticationPrincipal CustomUserDetails userDetails,
             Long workspaceId);
+
+    @Operation(
+            summary = "워크스페이스 수정",
+            description = "워크스페이스 이름, 회의 카테고리, 추가 문맥을 수정합니다. **소유자(owner)만** 호출 가능합니다. 보내지 않은 필드는 무시되며, name은 빈 값이면 기존 값을 유지합니다.",
+            parameters = {
+                    @Parameter(name = "workspaceId", description = "워크스페이스 ID", example = "1", required = true)
+            },
+            requestBody = @RequestBody(
+                    required = true,
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = WorkspaceUpdateRequest.class),
+                            examples = @ExampleObject(
+                                    name = "요청 예시",
+                                    value = """
+                                            {
+                                              "name": "새 팀 이름",
+                                              "meetingCategory": "개발",
+                                              "meetingContext": "React, Spring Boot 기반 캡스톤 프로젝트"
+                                            }
+                                            """
+                            )
+                    )
+            ),
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "수정 성공"),
+                    @ApiResponse(responseCode = "403", description = "소유자가 아님"),
+                    @ApiResponse(responseCode = "404", description = "워크스페이스를 찾을 수 없음")
+            }
+    )
+    ResponseEntity<WorkspaceResponse> updateWorkspace(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            Long workspaceId,
+            WorkspaceUpdateRequest request);
 
     @Operation(
             summary = "워크스페이스 나가기",
