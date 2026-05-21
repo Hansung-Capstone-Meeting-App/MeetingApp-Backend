@@ -367,37 +367,6 @@ public class GeminiAiService {
                 .collect(Collectors.joining(" "));
     }
 
-    private List<Long> parseParticipantUserIds(JsonNode node) {
-        List<Long> participantUserIds = new ArrayList<>();
-        if (node == null || !node.isArray()) {
-            return participantUserIds;
-        }
-
-        node.forEach(value -> {
-            if (value != null && value.canConvertToLong()) {
-                participantUserIds.add(value.asLong());
-            }
-        });
-        return participantUserIds;
-    }
-
-    private String normalizeDateTime(String value) {
-        if (value == null || value.isBlank()) {
-            return null;
-        }
-
-        try {
-            return LocalDateTime.parse(value, DATE_TIME_FORMATTER).format(DATE_TIME_FORMATTER);
-        } catch (Exception ignored) {
-        }
-
-        try {
-            return LocalDate.parse(value).atStartOfDay().format(DATE_TIME_FORMATTER);
-        } catch (Exception ignored) {
-            return value;
-        }
-    }
-
     private String normalizeText(String value) {
         if (value == null) {
             return null;

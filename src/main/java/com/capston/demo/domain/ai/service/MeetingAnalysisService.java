@@ -20,7 +20,6 @@ import com.capston.demo.domain.meeting.repository.MeetingTranscriptMongoReposito
 import com.capston.demo.domain.recording.service.RecordingService;
 import com.capston.demo.domain.user.entity.Workspace;
 import com.capston.demo.domain.user.repository.WorkspaceRepository;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -49,7 +48,6 @@ public class MeetingAnalysisService {
     private final RecordingService recordingService;
     private final MeetingTranscriptMongoRepository transcriptRepository;
     private final WorkspaceRepository workspaceRepository;
-    private final EventRepository eventRepository;
     private final TaskRepository taskRepository;
 
     // ── 1단계: STT (AssemblyAI) ────────────────────────────────────────────────
@@ -67,7 +65,7 @@ public class MeetingAnalysisService {
                 analyzeResponse.getSummary(),
                 analyzeResponse.getKeywords(),
                 analyzeResponse.getSavedTaskCount(),
-                analyzeResponse.getSavedEventCount()
+                0
         );
     }
 
