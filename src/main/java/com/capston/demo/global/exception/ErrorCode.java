@@ -53,9 +53,8 @@ public enum ErrorCode {
 
     // Notion
     NOTION_EVENT_CREATE_FAILED(400, "노션 캘린더에 일정을 생성하지 못했습니다. 데이터베이스 ID와 권한을 확인해주세요."),
-    NOTION_MEETING_NOTES_DB_NOT_REGISTERED(400, "회의록용 노션 데이터베이스를 먼저 등록해주세요."),
-    NOTION_MEETING_NOTES_EXPORT_FAILED(400, "노션에 회의록을보내지 못했습니다. 데이터베이스 ID·컬럼(Name, Date)과 권한을 확인해주세요."),
-    NOTION_ACCOUNT_NOT_LINKED(403, "Notion 계정이 연동되지 않았습니다.");
+    NOTION_CALENDAR_TARGETS_FAILED(400, "노션 캘린더 목록을 가져오지 못했습니다. Notion 연동 및 읽기 권한을 확인해주세요."),
+    NOTION_CALENDAR_CREATE_FAILED(400, "노션에 캘린더 데이터베이스를 만들지 못했습니다. Notion에 페이지를 만든 뒤 다시 시도하거나 parentPageId를 지정해주세요.");
 
     private final int status;
     private final String message;
