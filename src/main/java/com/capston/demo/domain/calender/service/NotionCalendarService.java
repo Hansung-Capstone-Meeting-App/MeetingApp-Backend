@@ -1,6 +1,7 @@
 package com.capston.demo.domain.calender.service;
 
 import com.capston.demo.domain.calender.entity.Event;
+import com.capston.demo.domain.user.dto.response.NotionCalendarTargetResponse;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
@@ -12,7 +13,10 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 // Event 정보를 기반으로 Notion 캘린더(데이터베이스)에 페이지를 생성하는 서비스
@@ -30,6 +34,256 @@ public class NotionCalendarService {
 
     // Notion 페이지 생성 REST API 엔드포인트
     private static final String NOTION_PAGES_URL = "https://api.notion.com/v1/pages";
+    // Notion 검색 API (연동 워크스페이스 내 database 목록 조회)
+    private static final String NOTION_SEARCH_URL = "https://api.notion.com/v1/search";
+    // Notion database 단건 조회 (캘린더 이름 등)
+    private static final String NOTION_DATABASES_URL = "https://api.notion.com/v1/databases/";
+    // 일정 sync(createEventInNotion)와 동일한 컬럼명
+    private static final String CALENDAR_TITLE_PROPERTY = "Name";
+    private static final String CALENDAR_DATE_PROPERTY = "Date";
+    private static final String DEFAULT_CALENDAR_DATABASE_NAME = "Meetflow 일정";
+
+    /**
+     * OAuth로 접근 가능한 Notion database 목록 조회 (캘린더 연결 화면용).
+     */
+    public List<NotionCalendarTargetResponse> searchCalendarTargets(String accessToken) {
+        try {
+            List<NotionCalendarTargetResponse> targets = new ArrayList<>();
+            String cursor = null;
+
+            do {
+                Map<String, Object> body = new HashMap<>();
+                body.put("filter", Map.of("value", "database", "property", "object"));
+                body.put("page_size", 100);
+                if (cursor != null) {
+                    body.put("start_cursor", cursor);
+                }
+
+                HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, notionHeaders(accessToken));
+                ResponseEntity<Map> response = restTemplate.exchange(
+                        NOTION_SEARCH_URL,
+                        HttpMethod.POST,
+                        request,
+                        Map.class
+                );
+
+                if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                    log.warn("Notion search failed. status={}, body={}", response.getStatusCode(), response.getBody());
+                    throw new BusinessException(ErrorCode.NOTION_CALENDAR_TARGETS_FAILED);
+                }
+
+                Map<String, Object> responseBody = response.getBody();
+                Object resultsObj = responseBody.get("results");
+                if (resultsObj instanceof List<?> results) {
+                    for (Object item : results) {
+                        if (item instanceof Map<?, ?> raw) {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> entry = (Map<String, Object>) raw;
+                            mapDatabaseResult(entry).ifPresent(targets::add);
+                        }
+                    }
+                }
+
+                Object hasMore = responseBody.get("has_more");
+                cursor = Boolean.TRUE.equals(hasMore) ? asString(responseBody.get("next_cursor")) : null;
+            } while (cursor != null && !cursor.isBlank());
+
+            targets.sort(Comparator.comparing(NotionCalendarTargetResponse::getName, String.CASE_INSENSITIVE_ORDER));
+            return targets;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (HttpClientErrorException e) {
+            log.error("Notion search API error: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString(), e);
+            throw new BusinessException(ErrorCode.NOTION_CALENDAR_TARGETS_FAILED, e);
+        } catch (Exception e) {
+            log.error("Error while searching Notion databases: {}", e.getMessage(), e);
+            throw new BusinessException(ErrorCode.NOTION_CALENDAR_TARGETS_FAILED, e);
+        }
+    }
+
+    private java.util.Optional<NotionCalendarTargetResponse> mapDatabaseResult(Map<String, Object> entry) {
+        if (!"database".equals(asString(entry.get("object")))) {
+            return java.util.Optional.empty();
+        }
+        Object archived = entry.get("archived");
+        if (Boolean.TRUE.equals(archived)) {
+            return java.util.Optional.empty();
+        }
+
+        String id = asString(entry.get("id"));
+        if (id == null || id.isBlank()) {
+            return java.util.Optional.empty();
+        }
+
+        String name = extractTitle(entry.get("title"));
+        if (name.isBlank()) {
+            name = "이름 없는 데이터베이스";
+        }
+
+        String url = asString(entry.get("url"));
+        return java.util.Optional.of(new NotionCalendarTargetResponse(id, name, "database", url));
+    }
+
+    /**
+     * Notion에 일정용 database를 새로 생성한다 (Name·Date 속성 — sync와 동일).
+     *
+     * @param parentPageId null 이면 search 로 첫 page 사용
+     */
+    public NotionCalendarTargetResponse createCalendarDatabase(String accessToken, String name, String parentPageId) {
+        try {
+            String dbName = (name == null || name.isBlank()) ? DEFAULT_CALENDAR_DATABASE_NAME : name.trim();
+            String resolvedParentPageId = resolveParentPageId(accessToken, parentPageId);
+
+            Map<String, Object> parent = Map.of(
+                    "type", "page_id",
+                    "page_id", resolvedParentPageId
+            );
+
+            Map<String, Object> titleBlock = Map.of(
+                    "type", "text",
+                    "text", Map.of("content", dbName)
+            );
+
+            Map<String, Object> properties = new HashMap<>();
+            properties.put(CALENDAR_TITLE_PROPERTY, Map.of("title", new HashMap<>()));
+            properties.put(CALENDAR_DATE_PROPERTY, Map.of("date", new HashMap<>()));
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("parent", parent);
+            body.put("title", List.of(titleBlock));
+            body.put("properties", properties);
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, notionHeaders(accessToken));
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_DATABASES_URL,
+                    HttpMethod.POST,
+                    request,
+                    Map.class
+            );
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                log.warn("Notion create database failed. status={}, body={}", response.getStatusCode(), response.getBody());
+                throw new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED);
+            }
+
+            return mapDatabaseResult(response.getBody())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED));
+        } catch (BusinessException e) {
+            throw e;
+        } catch (HttpClientErrorException e) {
+            log.error("Notion create database API error: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString(), e);
+            throw new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED, e);
+        } catch (Exception e) {
+            log.error("Error while creating Notion calendar database: {}", e.getMessage(), e);
+            throw new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED, e);
+        }
+    }
+
+    private String resolveParentPageId(String accessToken, String parentPageId) {
+        if (parentPageId != null && !parentPageId.isBlank()) {
+            return parentPageId.trim();
+        }
+        return searchFirstAccessiblePageId(accessToken)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED));
+    }
+
+    private java.util.Optional<String> searchFirstAccessiblePageId(String accessToken) {
+        Map<String, Object> body = new HashMap<>();
+        body.put("filter", Map.of("value", "page", "property", "object"));
+        body.put("page_size", 20);
+
+        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, notionHeaders(accessToken));
+        ResponseEntity<Map> response = restTemplate.exchange(
+                NOTION_SEARCH_URL,
+                HttpMethod.POST,
+                request,
+                Map.class
+        );
+
+        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+            return java.util.Optional.empty();
+        }
+
+        Object resultsObj = response.getBody().get("results");
+        if (!(resultsObj instanceof List<?> results)) {
+            return java.util.Optional.empty();
+        }
+
+        for (Object item : results) {
+            if (!(item instanceof Map<?, ?> raw)) {
+                continue;
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> entry = (Map<String, Object>) raw;
+            if (!"page".equals(asString(entry.get("object"))) || Boolean.TRUE.equals(entry.get("archived"))) {
+                continue;
+            }
+            String id = asString(entry.get("id"));
+            if (id != null && !id.isBlank()) {
+                return java.util.Optional.of(id);
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    /**
+     * 등록된 calendar database ID 로 Notion DB 제목 조회 (status 화면용).
+     * 실패 시 null 반환 — status API 전체는 실패하지 않음.
+     */
+    public String fetchDatabaseName(String accessToken, String databaseId) {
+        if (databaseId == null || databaseId.isBlank()) {
+            return null;
+        }
+        try {
+            HttpEntity<Void> request = new HttpEntity<>(notionHeaders(accessToken));
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_DATABASES_URL + databaseId.trim(),
+                    HttpMethod.GET,
+                    request,
+                    Map.class
+            );
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                String name = extractTitle(response.getBody().get("title"));
+                return name.isBlank() ? null : name;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch Notion database name for id={}: {}", databaseId, e.getMessage());
+        }
+        return null;
+    }
+
+    private HttpHeaders notionHeaders(String accessToken) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(accessToken);
+        headers.set("Notion-Version", notionVersion);
+        return headers;
+    }
+
+    private String extractTitle(Object titleObj) {
+        if (!(titleObj instanceof List<?> titleList)) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Object block : titleList) {
+            if (block instanceof Map<?, ?> raw) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> part = (Map<String, Object>) raw;
+                Object textObj = part.get("plain_text");
+                if (textObj == null && part.get("text") instanceof Map<?, ?> textMap) {
+                    textObj = ((Map<?, ?>) textMap).get("content");
+                }
+                if (textObj != null) {
+                    sb.append(textObj);
+                }
+            }
+        }
+        return sb.toString().trim();
+    }
+
+    private String asString(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
 
     /**
      * Event 엔티티 정보를 기반으로 Notion 캘린더(데이터베이스)에 일정을 생성한다.
@@ -41,11 +295,7 @@ public class NotionCalendarService {
      */
     public String createEventInNotion(Event event, String accessToken, String databaseId) { //Event 엔티티를 기반으로 Notion 캘린더에 일정을 생성
         try {
-            // 요청 헤더 구성 (JSON, Bearer 토큰, Notion-Version)
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(accessToken);
-            headers.set("Notion-Version", notionVersion);
+            HttpHeaders headers = notionHeaders(accessToken); //요청 헤더 구성 (JSON, Bearer 토큰, Notion-Version)
 
             // Event 엔티티를 Notion 페이지 생성 요청 바디로 변환
             Map<String, Object> body = buildNotionPageRequest(event, databaseId);
