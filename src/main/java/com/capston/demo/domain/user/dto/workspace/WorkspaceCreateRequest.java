@@ -8,4 +8,8 @@ public class WorkspaceCreateRequest {
 
     @NotBlank
     private String name;
+
+    private String meetingCategory;
+
+    private String meetingContext;
 }

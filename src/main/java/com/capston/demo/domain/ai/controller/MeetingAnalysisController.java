@@ -2,6 +2,7 @@ package com.capston.demo.domain.ai.controller;
 
 import com.capston.demo.domain.ai.controllerDocs.MeetingAnalysisControllerDocs;
 import com.capston.demo.domain.ai.dto.response.GeminiAnalyzeResponse;
+import com.capston.demo.domain.ai.dto.response.MeetingAnalyzeResponse;
 import com.capston.demo.domain.ai.dto.response.TranscribeResponse;
 import com.capston.demo.domain.ai.service.MeetingAnalysisService;
 import com.capston.demo.global.security.CustomUserDetails;
@@ -21,6 +22,16 @@ import org.springframework.web.bind.annotation.RestController;
 public class MeetingAnalysisController implements MeetingAnalysisControllerDocs {
 
     private final MeetingAnalysisService analysisService;
+
+    // 통합 분석: STT 전사 + Gemini 교정 + Gemini 분석 + Task/Event 저장
+    // POST /api/meetings/{meetingId}/recordings/{recordingId}/analyze
+    @PostMapping("/{meetingId}/recordings/{recordingId}/analyze")
+    public ResponseEntity<MeetingAnalyzeResponse> analyzeRecording(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long meetingId,
+            @PathVariable Long recordingId) {
+        return ResponseEntity.ok(analysisService.analyzeRecording(meetingId, recordingId, userDetails.getUserId()));
+    }
 
     // 1단계: STT 전사
     // POST /api/meetings/{meetingId}/recordings/{recordingId}/transcribe

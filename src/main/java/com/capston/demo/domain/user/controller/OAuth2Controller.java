@@ -2,11 +2,17 @@ package com.capston.demo.domain.user.controller;
 
 
 import com.capston.demo.domain.user.dto.OAuthUserInfo;
+import com.capston.demo.domain.user.dto.request.CreateNotionCalendarDatabaseRequestDto;
 import com.capston.demo.domain.user.dto.request.SetCalendarDatabaseRequestDto;
 import com.capston.demo.domain.user.dto.request.OAuthCodeRequestDto;
 import com.capston.demo.domain.user.dto.response.LoginResponseDto;
+import com.capston.demo.domain.user.dto.response.NotionCalendarTargetResponse;
+import com.capston.demo.domain.user.dto.response.NotionStatusResponse;
+import com.capston.demo.domain.user.entity.UserNotionAccount;
 import com.capston.demo.domain.user.entity.User;
+import com.capston.demo.domain.user.oauth.NotionOAuthFlow;
 import com.capston.demo.global.security.CustomUserDetails;
+import com.capston.demo.domain.calender.service.NotionCalendarService;
 import com.capston.demo.domain.user.repository.UserNotionAccountRepository;
 import com.capston.demo.domain.user.service.AuthService;
 import com.capston.demo.domain.user.service.GoogleOAuth2Service;
@@ -15,11 +21,14 @@ import com.capston.demo.domain.user.service.OAuthUserService;
 import com.capston.demo.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
+import java.util.List;
 import java.util.Map;
 
 // OAuth2 관련 인증 엔드포인트를 제공하는 컨트롤러 (Google / Notion 공통)
@@ -40,6 +49,8 @@ public class OAuth2Controller {
     private final UserNotionAccountRepository userNotionAccountRepository;
     // 현재 로그인한 사용자를 조회하기 위한 저장소
     private final UserRepository userRepository;
+    // Notion 캘린더 DB 검색·일정 생성
+    private final NotionCalendarService notionCalendarService;
 
     /**
      * Google 인증 URL 반환 (모바일 앱용)
@@ -48,68 +59,48 @@ public class OAuth2Controller {
      */
     @GetMapping("/google/auth-url")
     public ResponseEntity<Map<String, String>> getGoogleAuthUrl() {
-        String authUrl = googleOAuth2Service.getGoogleAuthorizationUrl(); //Google OAuth 인증 URL 생성
-        return ResponseEntity.ok(Map.of("authUrl", authUrl)); //Google OAuth 인증 URL 반환
+        // 프론트/앱이 리다이렉트할 Google 로그인 URL 생성
+        String authUrl = googleOAuth2Service.getGoogleAuthorizationUrl();
+        return ResponseEntity.ok(Map.of("authUrl", authUrl));
     }
 
     /**
-     * Notion 로그인용 인증 URL (모바일/웹).
-     * redirect → GET /notion/callback 에서 code를 즉시 JWT로 교환한다.
-     * Google 계정에 Notion을 붙일 때는 /notion/link/auth-url 을 사용할 것.
+     * Notion 인증 URL 반환 (모바일 앱용)
+     *
+     * @return Notion OAuth 인증 URL
      */
     @GetMapping("/notion/auth-url")
     public ResponseEntity<Map<String, String>> getNotionAuthUrl() {
-        String authUrl = notionOAuth2Service.getNotionAuthorizationUrl(); //로그인용 Notion 인증 URL
-        return ResponseEntity.ok(Map.of(
-                "authUrl", authUrl, //브라우저에서 열 URL
-                "purpose", "login", //용도: Notion으로 MeetingApp 로그인
-                "redirectUri", notionOAuth2Service.getLoginRedirectUri() //등록된 redirect (/notion/callback)
-        ));
+        // auth-url · code 교환 · Notion 콘솔 redirect URI 가 동일한 값 (LOGIN)
+        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LOGIN));
     }
 
     /**
-     * 기존 MeetingApp 계정(Google·이메일 등)에 Notion을 연동할 때 쓰는 인증 URL.
-     * redirect → GET /notion/link/callback (code를 JSON으로만 반환, 서버에서 미소비)
+     * 로그인한 사용자의 Notion 연동용 인증 URL (모바일 앱용)
+     * redirect_uri는 application.yml의 link-redirect-uri 와 동일해야 함
+     *
+     * @return Notion OAuth 인증 URL
      */
     @GetMapping("/notion/link/auth-url")
     public ResponseEntity<Map<String, String>> getNotionLinkAuthUrl() {
-        String authUrl = notionOAuth2Service.getNotionLinkAuthorizationUrl(); //연동용 Notion 인증 URL (redirect URI가 login 과 다름)
-        return ResponseEntity.ok(Map.of(
-                "authUrl", authUrl, //브라우저에서 열 URL
-                "purpose", "link", //용도: 이미 로그인한 계정에 Notion 연동
-                "redirectUri", notionOAuth2Service.getLinkRedirectUri(), //등록된 redirect (/notion/link/callback)
-                "nextStep", "Notion 허용 후 응답 JSON의 code로 POST /api/oauth2/notion/link 호출 (JWT 필요)"
-        ));
+        // auth-url · code 교환 · Notion 콘솔 redirect URI 가 동일한 값 (LINK)
+        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LINK));
     }
 
     /**
-     * Notion 계정 연동용 OAuth redirect (브라우저 GET).
-     * 로그인용 /notion/callback 과 달리 code를 Notion 토큰으로 교환하지 않고 JSON으로만 반환한다.
-     * 실제 연동은 클라이언트가 code를 받아 POST /notion/link (JWT) 로 완료한다.
+     * Notion 연동 OAuth 브라우저 콜백 (GET)
+     * JSON/JWT 반환 없이 302로 앱 딥링크에 code 또는 error 전달.
+     * 토큰 교환·DB 저장은 앱이 POST /notion/link 로 수행.
      */
     @GetMapping("/notion/link/callback")
-    public ResponseEntity<Map<String, Object>> notionLinkCallbackGet(
+    public ResponseEntity<Void> notionLinkCallback(
             @RequestParam(required = false) String code,
-            @RequestParam(required = false) String error
-    ) {
-        if (error != null && !error.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of( //Notion 측에서 error 쿼리로 리다이렉트한 경우
-                    "error", error,
-                    "message", "Notion OAuth 연동이 거부되었거나 실패했습니다."
-            ));
-        }
-        if (code == null || code.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of(
-                    "error", "missing_code",
-                    "message", "authorization code가 없습니다."
-            ));
-        }
-        return ResponseEntity.ok(Map.of( //code는 아직 사용 전 — POST /notion/link 에서 소비
-                "code", code,
-                "purpose", "link",
-                "message", "이 code를 POST /api/oauth2/notion/link body에 넣고, Authorization에 로그인 JWT를 넣으세요.",
-                "linkApi", "POST /api/oauth2/notion/link"
-        ));
+            @RequestParam(required = false) String error) {
+        // meetflow://notion/link?code=... 또는 ?error=...
+        String deepLink = notionOAuth2Service.buildLinkDeepLinkRedirect(code, error);
+        return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(deepLink))
+                .build();
     }
 
     /**
@@ -122,7 +113,7 @@ public class OAuth2Controller {
     @PostMapping("/google/callback")
     public ResponseEntity<LoginResponseDto> googleCallback(@RequestBody OAuthCodeRequestDto request) {
         try {
-            String code = request.getCode(); //인증 코드
+            String code = request.getCode();
 
             if (code == null || code.isEmpty()) {
                 // 클라이언트가 인증 코드를 주지 않은 경우
@@ -141,7 +132,7 @@ public class OAuth2Controller {
             // 4. OAuth 로그인 처리 (JWT 토큰 생성)
             LoginResponseDto response = authService.oauthLogin(user);
 
-            return ResponseEntity.ok(response); //JWT 토큰 발급 및 리프레시 토큰 발급
+            return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("OAuth callback error: {}", e.getMessage(), e);
             throw e;
@@ -226,45 +217,119 @@ public class OAuth2Controller {
     }
 
     /**
-     * 이미 로그인한 사용자(JWT)의 MeetingApp 계정에 Notion을 연동.
-     * code는 반드시 link/auth-url 플로우(/notion/link/callback redirect)에서 받은 것을 사용.
-     * (로그인용 /notion/callback 에서 받은 code는 redirect_uri 불일치로 실패함)
+     * 이미 우리 서비스에 로그인한 사용자가 자신의 노션 계정을 연결할 때 사용하는 엔드포인트
+     * (노션으로 로그인해서 새 계정 만드는 것이 아니라, 기존 계정에 노션 계정을 연동)
      */
     @PostMapping("/notion/link")
     public ResponseEntity<?> linkNotionAccount(@RequestBody OAuthCodeRequestDto request) {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication(); //인증 정보 가져오기
         if (authentication == null || !authentication.isAuthenticated()
-                || !(authentication.getPrincipal() instanceof CustomUserDetails)) { //JWT 없음
+                || !(authentication.getPrincipal() instanceof CustomUserDetails)) { //인증되지 않은 사용자 또는 예상 타입이 아닌 경우
             return ResponseEntity.status(401).body("Authentication required"); //401 Unauthorized 반환
         }
 
-        String code = request.getCode(); //link/callback redirect 에서 받은 인가 코드
-        if (code == null || code.isBlank()) {
+        String code = request.getCode(); //인증 코드
+        if (code == null || code.isBlank()) { //인증 코드가 없는 경우
             return ResponseEntity.badRequest().body("Authorization code is required");
         }
 
         try {
-            // link 전용 redirect_uri 로 code 교환 (로그인 callback 과 분리)
-            String accessToken = notionOAuth2Service.exchangeCodeForLink(code);
-            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken); //Notion 사용자 정보
+            // LINK 플로우: auth-url 과 동일한 redirect_uri 로 code 교환
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LINK);
+            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken); //엑세스 토큰으로 사용자 정보 조회
 
+            // 현재 로그인한 사용자 정보에서 userId 조회
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
-            Long userId = userDetails.getUserId(); //JWT에 담긴 Google/이메일 로그인 userId
+            Long userId = userDetails.getUserId();
 
+            // userId 기준으로 항상 기존 User를 조회 (없으면 404)
             User user = userRepository.findById(userId)
                     .orElseThrow(() -> new IllegalStateException("Authenticated user not found"));
 
-            notionOAuth2Service.linkNotionAccount(user, userInfo, accessToken, userNotionAccountRepository); //user_notion_accounts 저장
+            notionOAuth2Service.linkNotionAccount(user, userInfo, accessToken, userNotionAccountRepository);
 
-            return ResponseEntity.ok(Map.of(
-                    "message", "Notion account linked successfully", //연동 성공 메시지
-                    "userId", userId, //연동된 MeetingApp 사용자 ID (Google 로그인 userId)
-                    "notionName", userInfo.getName() != null ? userInfo.getName() : "" //연동된 Notion 표시 이름
-            ));
+            return ResponseEntity.ok().body("Notion account linked successfully");
         } catch (Exception e) {
             log.error("Notion link error: {}", e.getMessage(), e);
             throw e;
         }
+    }
+
+    /**
+     * Notion 연동·캘린더 설정 상태 조회 (설정 화면용).
+     * 미연동이어도 200 + linked=false 반환.
+     */
+    @GetMapping("/notion/status")
+    public ResponseEntity<NotionStatusResponse> getNotionStatus() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).build();
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        return userNotionAccountRepository.findByUser_Id(userDetails.getUserId())
+                .map(this::buildNotionStatus)
+                .map(ResponseEntity::ok)
+                .orElseGet(() -> ResponseEntity.ok(NotionStatusResponse.notLinked()));
+    }
+
+    /**
+     * Notion 연동 후 캘린더로 쓸 수 있는 database 목록 조회 (앱 선택 화면용).
+     * JWT 필요, Notion OAuth 연동(access_token) 필요.
+     */
+    @GetMapping("/notion/calendar-targets")
+    public ResponseEntity<?> getNotionCalendarTargets() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        Long userId = userDetails.getUserId();
+
+        return userNotionAccountRepository.findByUser_Id(userId)
+                .map(account -> {
+                    List<NotionCalendarTargetResponse> targets =
+                            notionCalendarService.searchCalendarTargets(account.getAccessToken());
+                    return ResponseEntity.ok(targets);
+                })
+                .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
+    }
+
+    /**
+     * Notion에 캘린더용 database를 새로 생성하고, 해당 유저의 연동 정보에 자동 등록한다.
+     * parentPageId 없으면 연동 워크스페이스의 첫 페이지 아래에 생성한다.
+     */
+    @PostMapping("/notion/calendar-targets")
+    public ResponseEntity<?> createNotionCalendarTarget(
+            @RequestBody(required = false) CreateNotionCalendarDatabaseRequestDto request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        Long userId = userDetails.getUserId();
+
+        String name = request != null ? request.getName() : null;
+        String parentPageId = request != null ? request.getParentPageId() : null;
+
+        return userNotionAccountRepository.findByUser_Id(userId)
+                .map(account -> {
+                    NotionCalendarTargetResponse created = notionCalendarService.createCalendarDatabase(
+                            account.getAccessToken(), name, parentPageId);
+                    account.setCalendarDatabaseId(created.getId());
+                    userNotionAccountRepository.save(account);
+                    return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                            "id", created.getId(),
+                            "name", created.getName(),
+                            "type", created.getType(),
+                            "url", created.getUrl() != null ? created.getUrl() : "",
+                            "message", "캘린더 데이터베이스가 생성·등록되었습니다.",
+                            "calendarConfigured", true
+                    ));
+                })
+                .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
     }
 
     /**
@@ -326,6 +391,31 @@ public class OAuth2Controller {
                     ));
                 })
                 .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
+    }
+
+    private NotionStatusResponse buildNotionStatus(UserNotionAccount account) {
+        String databaseId = account.getCalendarDatabaseId();
+        boolean calendarConfigured = databaseId != null && !databaseId.isBlank();
+        String calendarName = null;
+        if (calendarConfigured) {
+            calendarName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), databaseId);
+        }
+        return new NotionStatusResponse(
+                true,
+                calendarConfigured,
+                account.getNotionName(),
+                calendarName
+        );
+    }
+
+    /**
+     * Notion auth-url 응답 — redirectUri 를 함께 내려 Notion Integration 등록 URI 와 대조 가능
+     */
+    private Map<String, String> notionAuthUrlResponse(NotionOAuthFlow flow) {
+        return Map.of(
+                "authUrl", notionOAuth2Service.getAuthorizationUrl(flow),
+                "redirectUri", notionOAuth2Service.resolveRedirectUri(flow)
+        );
     }
 
     /** databaseId가 있으면 그대로, 없으면 databaseUrl에서 마지막 path 세그먼트로 ID 추출 */

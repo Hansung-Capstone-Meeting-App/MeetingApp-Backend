@@ -3,9 +3,11 @@ package com.capston.demo.domain.user.service;
 import com.capston.demo.domain.user.dto.OAuthUserInfo;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.entity.UserNotionAccount;
+import com.capston.demo.domain.user.oauth.NotionOAuthFlow;
 import com.capston.demo.domain.user.repository.UserNotionAccountRepository;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -25,10 +27,6 @@ public class NotionOAuth2Service {
 
     private final RestTemplate restTemplate;
 
-    // OAuth redirect URI 치환용 서버 base URL (application.yml: app.oauth.base-url)
-    @Value("${app.oauth.base-url:http://localhost:8080}")
-    private String oauthBaseUrl;
-
     // Notion OAuth 클라이언트 ID
     @Value("${spring.security.oauth2.client.registration.notion.client-id}")
     private String clientId;
@@ -37,11 +35,11 @@ public class NotionOAuth2Service {
     @Value("${spring.security.oauth2.client.registration.notion.client-secret}")
     private String clientSecret;
 
-    // Notion 로그인용 redirect URI 템플릿 (→ /api/oauth2/notion/callback)
+    // Notion 로그인 리다이렉트 URI 템플릿 (예: {baseUrl}/api/oauth2/notion/callback)
     @Value("${spring.security.oauth2.client.registration.notion.redirect-uri}")
     private String loginRedirectUriTemplate;
 
-    // Notion 계정 연동용 redirect URI 템플릿 (→ /api/oauth2/notion/link/callback)
+    // Notion 연동(기존 계정) 리다이렉트 URI 템플릿 (예: {baseUrl}/api/oauth2/notion/link/callback)
     @Value("${spring.security.oauth2.client.registration.notion.link-redirect-uri}")
     private String linkRedirectUriTemplate;
 
@@ -65,75 +63,103 @@ public class NotionOAuth2Service {
     @Value("${spring.security.oauth2.client.provider.notion.notion-version:2022-06-28}")
     private String notionVersion;
 
+    // application.yml app.oauth.base-url — {baseUrl} 치환용
+    @Value("${app.oauth.base-url:http://localhost:8080}")
+    private String oauthBaseUrl;
+
+    // 연동 콜백 후 앱으로 돌아갈 딥링크 (예: meetflow://notion/link)
+    @Value("${app.notion.link-deep-link:meetflow://notion/link}")
+    private String linkDeepLink;
+
+    @PostConstruct
+    void logResolvedRedirectUris() {
+        // Notion Integration 콘솔에 등록한 URI와 아래 로그가 일치해야 함
+        log.info("Notion OAuth LOGIN redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LOGIN));
+        log.info("Notion OAuth LINK redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LINK));
+    }
+
     /**
-     * Notion 로그인용 인증 URL.
-     * redirect 후 GET /notion/callback 에서 code를 즉시 JWT로 교환한다.
+     * 플로우별 최종 redirect_uri (auth-url · token 교환 · Notion 콘솔 등록 URI 공통)
      */
+    public String resolveRedirectUri(NotionOAuthFlow flow) {
+        String template = flow == NotionOAuthFlow.LOGIN
+                ? loginRedirectUriTemplate
+                : linkRedirectUriTemplate;
+        String resolved = template.replace("{baseUrl}", resolveBaseUrl());
+        if (resolved.contains("{baseUrl}")) {
+            throw new IllegalStateException(
+                    "Notion redirect URI가 치환되지 않았습니다. app.oauth.base-url 및 yml 템플릿을 확인하세요: " + template);
+        }
+        return resolved;
+    }
+
+    /** Notion 로그인용 인증 URL (redirect_uri = resolveRedirectUri(LOGIN)) */
     public String getNotionAuthorizationUrl() {
-        String finalRedirectUri = resolveRedirectUri(loginRedirectUriTemplate); //로그인용 redirect URI
-        return buildAuthorizationUrl(finalRedirectUri);
+        return getAuthorizationUrl(NotionOAuthFlow.LOGIN);
     }
 
-    /**
-     * 기존 MeetingApp 계정(Google 등)에 Notion을 연동할 때 쓰는 인증 URL.
-     * redirect 후 GET /notion/link/callback 에서 code를 JSON으로만 반환한다(서버에서 미소비).
-     */
+    /** 기존 계정 Notion 연동용 인증 URL (redirect_uri = resolveRedirectUri(LINK)) */
     public String getNotionLinkAuthorizationUrl() {
-        String finalRedirectUri = resolveRedirectUri(linkRedirectUriTemplate); //연동용 redirect URI
-        return buildAuthorizationUrl(finalRedirectUri);
+        return getAuthorizationUrl(NotionOAuthFlow.LINK);
     }
 
-    // Swagger/문서용: 로그인 redirect URI 실제 값
-    public String getLoginRedirectUri() {
-        return resolveRedirectUri(loginRedirectUriTemplate);
+    /** auth-url 과 동일한 redirect_uri 로 Notion 인증 URL 생성 */
+    public String getAuthorizationUrl(NotionOAuthFlow flow) {
+        String redirectUri = resolveRedirectUri(flow);
+        log.debug("Notion authorization URL flow={} redirect_uri={}", flow, redirectUri);
+        return buildAuthorizationUrl(redirectUri);
     }
 
-    // Swagger/문서용: 연동 redirect URI 실제 값
-    public String getLinkRedirectUri() {
-        return resolveRedirectUri(linkRedirectUriTemplate);
+    public String resolveLoginRedirectUri() {
+        return resolveRedirectUri(NotionOAuthFlow.LOGIN);
     }
 
-    // Notion authorize URL 공통 생성 (redirect_uri만 다름)
-    private String buildAuthorizationUrl(String finalRedirectUri) {
-        return UriComponentsBuilder.fromHttpUrl(authorizationUri) //Notion 인증 페이지 URL
-                .queryParam("client_id", clientId) //Notion OAuth 클라이언트 ID
-                .queryParam("redirect_uri", finalRedirectUri) //Notion 리다이렉트 URI
-                .queryParam("response_type", "code") //인증 코드 발급 요청
-                .queryParam("owner", "user") //사용자 인증 요청
-                .queryParam("scope", scope) //요청할 Notion 권한 범위
-                .toUriString(); //URL 문자열로 변환
+    public String resolveLinkRedirectUri() {
+        return resolveRedirectUri(NotionOAuthFlow.LINK);
+    }
+
+    /** 연동 콜백 → 앱 딥링크 URL (code 또는 error 쿼리) */
+    public String buildLinkDeepLinkRedirect(String code, String error) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(linkDeepLink);
+        if (code != null && !code.isBlank()) {
+            builder.queryParam("code", code);
+        } else {
+            String err = (error != null && !error.isBlank()) ? error : "missing_code";
+            builder.queryParam("error", err);
+        }
+        return builder.build(true).toUriString();
+    }
+
+    // 인가 코드(code)를 Notion 액세스 토큰으로 교환 (로그인 플로우 — LOGIN redirect_uri)
+    public String exchangeCodeForToken(String code) {
+        return exchangeCodeForToken(code, NotionOAuthFlow.LOGIN);
     }
 
     /**
-     * Notion 로그인 callback용 code 교환.
-     * auth-url과 동일한 redirect_uri(/notion/callback)를 사용해야 한다.
+     * 인가 코드를 토큰으로 교환.
+     * redirect_uri 는 해당 플로우의 auth-url 과 동일한 값만 사용 (임의 URI 전달 불가).
      */
-    public String exchangeCodeForToken(String code) { //로그인용 code 교환
-        return exchangeCodeForToken(code, resolveRedirectUri(loginRedirectUriTemplate)); //로그인용 redirect URI 치환
+    public String exchangeCodeForToken(String code, NotionOAuthFlow flow) {
+        String redirectUri = resolveRedirectUri(flow);
+        log.debug("Notion token exchange flow={} redirect_uri={}", flow, redirectUri);
+        return exchangeCodeForTokenInternal(code, redirectUri);
     }
 
-    /**
-     * POST /notion/link 용 code 교환.
-     * link/auth-url과 동일한 redirect_uri(/notion/link/callback)를 사용해야 한다.
-     */
-    public String exchangeCodeForLink(String code) { //연동용 code 교환
-        return exchangeCodeForToken(code, resolveRedirectUri(linkRedirectUriTemplate)); //연동용 redirect URI 치환
-    }
-
-    // 인가 코드(code)를 Notion 액세스 토큰으로 교환 (redirect_uri는 호출 목적에 따라 다름)
-    private String exchangeCodeForToken(String code, String redirectUri) {
+    private String exchangeCodeForTokenInternal(String code, String redirectUri) {
         return executeWithRetry(() -> {
             try {
                 HttpHeaders headers = new HttpHeaders(); //HTTP 헤더 생성
                 headers.setContentType(MediaType.APPLICATION_JSON); //Content-Type을 JSON으로 설정
-                headers.setBasicAuth(clientId, clientSecret); //Notion은 Basic Auth로 client_id/secret 전달
+                // Notion은 client_id/client_secret을 Basic Auth로 요구
+                headers.setBasicAuth(clientId, clientSecret); //Basic Auth 설정
 
                 Map<String, Object> body = Map.of( //요청 바디 생성
                         "grant_type", "authorization_code",
                         "code", code,
-                        "redirect_uri", redirectUri //auth-url 요청 시 넣었던 redirect_uri와 동일해야 함
+                        "redirect_uri", redirectUri // auth-url 의 redirect_uri 와 동일해야 함
                 );
 
+                // JSON 바디로 토큰 엔드포인트 호출
                 HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, headers); //HTTP 요청 엔티티 생성
                 ResponseEntity<Map> response = restTemplate.exchange( //Notion 토큰 엔드포인트 호출
                         tokenUri,
@@ -142,10 +168,10 @@ public class NotionOAuth2Service {
                         Map.class
                 );
 
-                if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
+                if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) { //응답 상태 코드가 200 OK이고 바디가 존재하면
                     Object token = response.getBody().get("access_token"); //엑세스 토큰 추출
-                    if (token instanceof String s && !s.isBlank()) {
-                        return s;
+                    if (token instanceof String s && !s.isBlank()) { //엑세스 토큰이 비어있지 않으면
+                        return s; //엑세스 토큰 반환
                     }
                 }
 
@@ -153,7 +179,7 @@ public class NotionOAuth2Service {
             } catch (BusinessException e) {
                 throw e;
             } catch (Exception e) {
-                log.error("Notion token exchange error: {}", e.getMessage());
+                log.error("Notion token exchange error (redirect_uri={}): {}", redirectUri, e.getMessage());
                 throw new BusinessException(ErrorCode.OAUTH_TOKEN_EXCHANGE_FAILED, e);
             }
         });
@@ -161,10 +187,11 @@ public class NotionOAuth2Service {
 
     // Notion 액세스 토큰으로 현재 사용자(me) 정보 조회
     public OAuthUserInfo getUserInfo(String accessToken) {
-        return executeWithRetry(() -> {
+        return executeWithRetry(() -> { //엑세스 토큰을 사용하여 사용자 정보 조회
             try {
                 HttpHeaders headers = new HttpHeaders(); //HTTP 헤더 생성
                 headers.setBearerAuth(accessToken); //Bearer Auth 설정
+                // Notion API 버전은 헤더로 전달해야 함
                 headers.set("Notion-Version", notionVersion); //Notion API 버전 헤더 설정
 
                 HttpEntity<Void> request = new HttpEntity<>(headers); //HTTP 요청 엔티티 생성
@@ -175,9 +202,26 @@ public class NotionOAuth2Service {
                         Map.class
                 );
 
-                if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) {
-                    Map<String, Object> body = response.getBody();
-                    return parseOAuthUserInfo(body);
+                if (response.getStatusCode() == HttpStatus.OK && response.getBody() != null) { //응답 상태 코드가 200 OK이고 바디가 존재하면
+                    Map<String, Object> body = response.getBody(); //바디 추출
+                    String id = asString(body.get("id")); //사용자 ID 추출
+                    String name = asString(body.get("name")); //사용자 이름 추출
+                    String avatarUrl = asString(body.get("avatar_url")); //사용자 아바타 URL 추출(사진)
+
+                    String email = null; //이메일 초기화(Notion 사용자 정보에 이메일이 없을 수 있음)
+                    // 이메일은 person.email 안에 있을 수 있음 (없을 수도 있음)
+                    Object personObj = body.get("person"); //person 객체 추출
+                    if (personObj instanceof Map<?, ?> person) { //person 객체가 Map인 경우
+                        email = asString(person.get("email")); //이메일 추출
+                    }
+
+                    return OAuthUserInfo.builder() //OAuthUserInfo 빌더 생성
+                            .provider("notion") //제공자 설정
+                            .providerId(id) //제공자 ID 설정
+                            .email(email) //이메일 설정
+                            .name(name != null && !name.isBlank() ? name : "Notion User") //이름 설정(이름이 없을 수 있음)
+                            .picture(avatarUrl) //사진 설정
+                            .build(); //OAuthUserInfo 객체 생성
                 }
 
                 throw new BusinessException(ErrorCode.OAUTH_USER_INFO_FAILED);
@@ -190,39 +234,48 @@ public class NotionOAuth2Service {
         });
     }
 
-    // 우리 서비스 User(JWT 로그인 사용자)와 Notion 계정을 연동하거나 갱신 → user_notion_accounts 저장
+    // 우리 서비스의 User와 Notion 계정을 연동하거나 갱신
     public void linkNotionAccount(User user,
                                   OAuthUserInfo userInfo,
                                   String accessToken,
                                   UserNotionAccountRepository repository) {
-        Long userId = user.getId();
-        repository.findByUser_Id(userId) //user_id 기준 조회 (동일 유저 중복 행 방지)
-                .ifPresentOrElse(
-                        existing -> { //기존 연동 정보가 있을 경우 갱신
-                            existing.setAccessToken(accessToken); //Notion API 호출용 토큰 갱신
-                            existing.setNotionUserId(userInfo.getProviderId());
-                            existing.setNotionName(userInfo.getName());
-                            existing.setLinkedAt(java.time.LocalDateTime.now());
-                            repository.save(existing);
+        repository.findByUser(user)
+                .ifPresentOrElse( //Notion 계정이 존재하면 업데이트, 없으면 생성 (이미 로그인한 사용자가 노션 계정을 연결)
+                        existing -> {
+                            existing.setAccessToken(accessToken); //엑세스 토큰 설정
+                            existing.setNotionUserId(userInfo.getProviderId()); //Notion 사용자 ID 설정
+                            existing.setNotionName(userInfo.getName()); //Notion 사용자 이름 설정
+                            existing.setLinkedAt(java.time.LocalDateTime.now()); //연결 시간 설정
+                            repository.save(existing); //Notion 계정 저장
                         },
-                        () -> { //기존 연동 정보가 없을 경우 새로 생성
-                            UserNotionAccount account = new UserNotionAccount(); //UserNotionAccount 객체 생성
-                            account.setUser(user); //사용자 연동
-                            account.setNotionUserId(userInfo.getProviderId()); //Notion 사용자 ID
-                            account.setNotionName(userInfo.getName()); //Notion 사용자 이름
-                            account.setAccessToken(accessToken); //Notion API 호출용 토큰
-                            repository.save(account); //저장
+                        () -> { //Notion 계정이 존재하지 않으면 생성 (최초 로그인)
+                            UserNotionAccount account = new UserNotionAccount();
+                            account.setUser(user);
+                            account.setNotionUserId(userInfo.getProviderId());
+                            account.setNotionName(userInfo.getName());
+                            account.setAccessToken(accessToken);
+                            repository.save(account);
                         }
                 );
     }
 
-    // application.yml의 {baseUrl}을 실제 서버 주소로 치환
-    private String resolveRedirectUri(String template) {
-        String base = oauthBaseUrl == null ? "http://localhost:8080" : oauthBaseUrl.trim();
+    private String buildAuthorizationUrl(String redirectUri) {
+        return UriComponentsBuilder.fromHttpUrl(authorizationUri) //Notion 인증 페이지 URL
+                .queryParam("client_id", clientId) //Notion OAuth 클라이언트 ID
+                .queryParam("redirect_uri", redirectUri) //Notion 리다이렉트 URI (토큰 교환 시와 동일)
+                .queryParam("response_type", "code") //인증 코드 발급 요청
+                .queryParam("owner", "user") //사용자 인증 요청
+                .queryParam("scope", scope) //요청할 Notion 권한 범위
+                .build() //URL 빌더 생성(최종 URL 생성)
+                .toUriString(); //URL 문자열로 변환
+    }
+
+    private String resolveBaseUrl() {
+        String base = oauthBaseUrl == null ? "" : oauthBaseUrl.trim();
         if (base.endsWith("/")) {
             base = base.substring(0, base.length() - 1);
         }
-        return template.replace("{baseUrl}", base);
+        return base.isEmpty() ? "http://localhost:8080" : base;
     }
 
     private <T> T executeWithRetry(java.util.function.Supplier<T> operation) {
@@ -234,61 +287,8 @@ public class NotionOAuth2Service {
         }
     }
 
-    /**
-     * OAuth 토큰의 /users/me 응답 파싱.
-     * OAuth 토큰은 봇(bot) 사용자를 가리키므로 최상위 name은 연동 앱 이름이다.
-     * 실제 로그인한 사람의 이름·이메일은 bot.owner.user 에 있다.
-     */
-    private OAuthUserInfo parseOAuthUserInfo(Map<String, Object> body) {
-        String id = asString(body.get("id"));
-        String name = asString(body.get("name"));
-        String avatarUrl = asString(body.get("avatar_url"));
-        String email = null;
-
-        String type = asString(body.get("type"));
-        if ("person".equals(type)) {
-            Object personObj = body.get("person");
-            if (personObj instanceof Map<?, ?> person) {
-                email = asString(person.get("email"));
-            }
-        } else if ("bot".equals(type)) {
-            Object botObj = body.get("bot");
-            if (botObj instanceof Map<?, ?> bot) {
-                Object ownerObj = bot.get("owner");
-                if (ownerObj instanceof Map<?, ?> owner && "user".equals(asString(owner.get("type")))) {
-                    Object userObj = owner.get("user");
-                    if (userObj instanceof Map<?, ?> ownerUser) {
-                        String ownerId = asString(ownerUser.get("id"));
-                        String ownerName = asString(ownerUser.get("name"));
-                        String ownerAvatar = asString(ownerUser.get("avatar_url"));
-                        if (ownerId != null && !ownerId.isBlank()) {
-                            id = ownerId;
-                        }
-                        if (ownerName != null && !ownerName.isBlank()) {
-                            name = ownerName;
-                        }
-                        if (ownerAvatar != null && !ownerAvatar.isBlank()) {
-                            avatarUrl = ownerAvatar;
-                        }
-                        Object personObj = ownerUser.get("person");
-                        if (personObj instanceof Map<?, ?> person) {
-                            email = asString(person.get("email"));
-                        }
-                    }
-                }
-            }
-        }
-
-        return OAuthUserInfo.builder()
-                .provider("notion")
-                .providerId(id)
-                .email(email)
-                .name(name != null && !name.isBlank() ? name : "Notion User")
-                .picture(avatarUrl)
-                .build();
-    }
-
     private String asString(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 }
+
