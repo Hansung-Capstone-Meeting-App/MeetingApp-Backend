@@ -62,7 +62,7 @@ public interface OAuth2ControllerDocs {
                     @ApiResponse(responseCode = "302", description = "앱 딥링크로 리다이렉트")
             }
     )
-    ResponseEntity<Void> notionLinkCallback(String code, String error);
+    ResponseEntity<String> notionLinkCallback(String code, String error, String state);
 
     @Operation(
             summary = "Google OAuth 콜백 (POST)",

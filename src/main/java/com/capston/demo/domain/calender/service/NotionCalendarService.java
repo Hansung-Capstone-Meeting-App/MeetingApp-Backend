@@ -11,6 +11,7 @@ import org.springframework.http.*;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.util.UriComponentsBuilder;
 
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -38,6 +39,8 @@ public class NotionCalendarService {
     private static final String NOTION_SEARCH_URL = "https://api.notion.com/v1/search";
     // Notion database 단건 조회 (캘린더 이름 등)
     private static final String NOTION_DATABASES_URL = "https://api.notion.com/v1/databases/";
+    private static final String NOTION_VIEWS_URL = "https://api.notion.com/v1/views";
+    private static final String NOTION_VIEW_VERSION = "2026-03-11";
     // 일정 sync(createEventInNotion)와 동일한 컬럼명
     private static final String CALENDAR_TITLE_PROPERTY = "Name";
     private static final String CALENDAR_DATE_PROPERTY = "Date";
@@ -125,13 +128,264 @@ public class NotionCalendarService {
         return java.util.Optional.of(new NotionCalendarTargetResponse(id, name, "database", url));
     }
 
+    private java.util.Optional<NotionCalendarTargetResponse> findAccessibleNameDateDatabase(String accessToken) {
+        try {
+            String cursor = null;
+            do {
+                Map<String, Object> body = new HashMap<>();
+                body.put("filter", Map.of("value", "database", "property", "object"));
+                body.put("page_size", 100);
+                if (cursor != null) {
+                    body.put("start_cursor", cursor);
+                }
+
+                ResponseEntity<Map> response = restTemplate.exchange(
+                        NOTION_SEARCH_URL,
+                        HttpMethod.POST,
+                        new HttpEntity<>(body, notionHeaders(accessToken)),
+                        Map.class
+                );
+
+                if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                    return java.util.Optional.empty();
+                }
+
+                Object resultsObj = response.getBody().get("results");
+                if (resultsObj instanceof List<?> results) {
+                    for (Object item : results) {
+                        if (!(item instanceof Map<?, ?> raw)) {
+                            continue;
+                        }
+                        @SuppressWarnings("unchecked")
+                        Map<String, Object> entry = (Map<String, Object>) raw;
+                        if (hasNameDateSchema(entry) || fetchDatabase(accessToken, entry).map(this::hasNameDateSchema).orElse(false)) {
+                            return mapDatabaseResult(entry);
+                        }
+                    }
+                }
+
+                cursor = Boolean.TRUE.equals(response.getBody().get("has_more"))
+                        ? asString(response.getBody().get("next_cursor"))
+                        : null;
+            } while (cursor != null && !cursor.isBlank());
+        } catch (Exception e) {
+            log.warn("Failed to find existing Notion calendar database: {}", e.getMessage());
+        }
+        return java.util.Optional.empty();
+    }
+
+    private java.util.Optional<Map<String, Object>> fetchDatabase(String accessToken, Map<String, Object> entry) {
+        String id = asString(entry.get("id"));
+        if (id == null || id.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_DATABASES_URL + id,
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionHeaders(accessToken)),
+                    Map.class
+            );
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = response.getBody();
+                return java.util.Optional.of(body);
+            }
+        } catch (Exception ignored) {
+        }
+        return java.util.Optional.empty();
+    }
+
+    private boolean hasNameDateSchema(Map<String, Object> database) {
+        Object propertiesObj = database.get("properties");
+        if (!(propertiesObj instanceof Map<?, ?> properties)) {
+            return false;
+        }
+
+        Object titleObj = properties.get(CALENDAR_TITLE_PROPERTY);
+        Object dateObj = properties.get(CALENDAR_DATE_PROPERTY);
+        return hasPropertyType(titleObj, "title") && hasPropertyType(dateObj, "date");
+    }
+
+    private boolean hasPropertyType(Object propertyObj, String type) {
+        if (!(propertyObj instanceof Map<?, ?> property)) {
+            return false;
+        }
+        return type.equals(asString(property.get("type"))) || property.containsKey(type);
+    }
+
+    private void ensureCalendarView(String accessToken, String databaseId, boolean removeDefaultTableView) {
+        try {
+            if (databaseId == null || databaseId.isBlank()) {
+                return;
+            }
+            java.util.Optional<String> existingCalendarViewId = findViewIdByType(accessToken, databaseId, "calendar");
+            if (existingCalendarViewId.isPresent()) {
+                return;
+            }
+
+            String dataSourceId = fetchDataSourceId(accessToken, databaseId)
+                    .orElseThrow(() -> new IllegalStateException("Notion data_source_id not found"));
+
+            Map<String, Object> body = new HashMap<>();
+            body.put("database_id", databaseId);
+            body.put("data_source_id", dataSourceId);
+            body.put("name", "Calendar");
+            body.put("type", "calendar");
+
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_VIEWS_URL,
+                    HttpMethod.POST,
+                    new HttpEntity<>(body, notionViewHeaders(accessToken)),
+                    Map.class
+            );
+
+            String createdViewId = response.getBody() == null ? null : asString(response.getBody().get("id"));
+            if (removeDefaultTableView && createdViewId != null && !createdViewId.isBlank()) {
+                deleteDefaultTableViews(accessToken, databaseId, createdViewId);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to create Notion calendar view for databaseId={}: {}", databaseId, e.getMessage());
+        }
+    }
+
+    private java.util.Optional<String> fetchDataSourceId(String accessToken, String databaseId) {
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_DATABASES_URL + databaseId.trim(),
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionViewHeaders(accessToken)),
+                    Map.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                return java.util.Optional.empty();
+            }
+
+            Object dataSourcesObj = response.getBody().get("data_sources");
+            if (dataSourcesObj instanceof List<?> dataSources && !dataSources.isEmpty()) {
+                Object first = dataSources.get(0);
+                if (first instanceof Map<?, ?> dataSource) {
+                    String id = asString(dataSource.get("id"));
+                    if (id != null && !id.isBlank()) {
+                        return java.util.Optional.of(id);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch Notion data source id for databaseId={}: {}", databaseId, e.getMessage());
+        }
+        return java.util.Optional.empty();
+    }
+
+    private java.util.Optional<String> findViewIdByType(String accessToken, String databaseId, String type) {
+        for (Map<String, Object> view : listViews(accessToken, databaseId)) {
+            if (type.equals(asString(view.get("type")))) {
+                String id = asString(view.get("id"));
+                if (id != null && !id.isBlank()) {
+                    return java.util.Optional.of(id);
+                }
+            }
+        }
+        return java.util.Optional.empty();
+    }
+
+    private List<Map<String, Object>> listViews(String accessToken, String databaseId) {
+        List<Map<String, Object>> views = new ArrayList<>();
+        try {
+            String url = UriComponentsBuilder.fromHttpUrl(NOTION_VIEWS_URL)
+                    .queryParam("database_id", databaseId)
+                    .build()
+                    .toUriString();
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    url,
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionViewHeaders(accessToken)),
+                    Map.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                return views;
+            }
+            Object resultsObj = response.getBody().get("results");
+            if (!(resultsObj instanceof List<?> results)) {
+                return views;
+            }
+            for (Object item : results) {
+                if (!(item instanceof Map<?, ?> raw)) {
+                    continue;
+                }
+                String id = asString(raw.get("id"));
+                if (id == null || id.isBlank()) {
+                    continue;
+                }
+                retrieveView(accessToken, id).ifPresent(views::add);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to list Notion views for databaseId={}: {}", databaseId, e.getMessage());
+        }
+        return views;
+    }
+
+    private java.util.Optional<Map<String, Object>> retrieveView(String accessToken, String viewId) {
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_VIEWS_URL + "/" + viewId,
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionViewHeaders(accessToken)),
+                    Map.class
+            );
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = response.getBody();
+                return java.util.Optional.of(body);
+            }
+        } catch (Exception ignored) {
+        }
+        return java.util.Optional.empty();
+    }
+
+    private void deleteDefaultTableViews(String accessToken, String databaseId, String keepViewId) {
+        for (Map<String, Object> view : listViews(accessToken, databaseId)) {
+            String id = asString(view.get("id"));
+            if (id == null || id.equals(keepViewId)) {
+                continue;
+            }
+            if (!"table".equals(asString(view.get("type")))) {
+                continue;
+            }
+            if (!"Default view".equals(asString(view.get("name")))) {
+                continue;
+            }
+            try {
+                restTemplate.exchange(
+                        NOTION_VIEWS_URL + "/" + id,
+                        HttpMethod.DELETE,
+                        new HttpEntity<>(notionViewHeaders(accessToken)),
+                        Map.class
+                );
+            } catch (Exception e) {
+                log.warn("Failed to delete default Notion table view id={}: {}", id, e.getMessage());
+            }
+        }
+    }
+
     /**
      * Notion에 일정용 database를 새로 생성한다 (Name·Date 속성 — sync와 동일).
      *
      * @param parentPageId null 이면 search 로 첫 page 사용
      */
     public NotionCalendarTargetResponse createCalendarDatabase(String accessToken, String name, String parentPageId) {
-        return createNameDateDatabase(accessToken, name, parentPageId, DEFAULT_CALENDAR_DATABASE_NAME);
+        if (parentPageId == null || parentPageId.isBlank()) {
+            java.util.Optional<NotionCalendarTargetResponse> existing = findAccessibleNameDateDatabase(accessToken);
+            if (existing.isPresent()) {
+                ensureCalendarView(accessToken, existing.get().getId(), false);
+                return existing.get();
+            }
+        }
+
+        NotionCalendarTargetResponse created =
+                createNameDateDatabase(accessToken, name, parentPageId, DEFAULT_CALENDAR_DATABASE_NAME);
+        ensureCalendarView(accessToken, created.getId(), true);
+        return created;
     }
 
     /**
@@ -278,6 +532,14 @@ public class NotionCalendarService {
         return headers;
     }
 
+    private HttpHeaders notionViewHeaders(String accessToken) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setBearerAuth(accessToken);
+        headers.set("Notion-Version", NOTION_VIEW_VERSION);
+        return headers;
+    }
+
     private String extractTitle(Object titleObj) {
         if (!(titleObj instanceof List<?> titleList)) {
             return "";
@@ -316,6 +578,7 @@ public class NotionCalendarService {
             HttpHeaders headers = notionHeaders(accessToken); //요청 헤더 구성 (JSON, Bearer 토큰, Notion-Version)
 
             // Event 엔티티를 Notion 페이지 생성 요청 바디로 변환
+            ensureCalendarView(accessToken, databaseId, true);
             Map<String, Object> body = buildNotionPageRequest(event, databaseId);
 
             // 최종 HTTP 요청 엔티티

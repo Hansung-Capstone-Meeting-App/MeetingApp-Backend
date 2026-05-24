@@ -22,12 +22,12 @@ import com.capston.demo.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.web.bind.annotation.*;
 
-import java.net.URI;
 import java.util.List;
 import java.util.Map;
 
@@ -92,15 +92,15 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
      * JSON/JWT 반환 없이 302로 앱 딥링크에 code 또는 error 전달.
      * 토큰 교환·DB 저장은 앱이 POST /notion/link 로 수행.
      */
-    @GetMapping("/notion/link/callback")
-    public ResponseEntity<Void> notionLinkCallback(
+    @GetMapping(value = "/notion/link/callback", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> notionLinkCallback(
             @RequestParam(required = false) String code,
-            @RequestParam(required = false) String error) {
+            @RequestParam(required = false) String error,
+            @RequestParam(required = false) String state) {
         // meetflow://notion/link?code=... 또는 ?error=...
-        String deepLink = notionOAuth2Service.buildLinkDeepLinkRedirect(code, error);
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(deepLink))
-                .build();
+        log.info("Notion LINK callback received. hasCode={}, error={}, state={}",
+                code != null && !code.isBlank(), error, state);
+        return ResponseEntity.ok(notionOAuth2Service.buildLinkCallbackBridgeHtml(code, error, state));
     }
 
     /**
