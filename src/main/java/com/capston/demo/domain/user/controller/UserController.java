@@ -1,6 +1,6 @@
 package com.capston.demo.domain.user.controller;
 
-
+import com.capston.demo.domain.user.controllerDocs.UserControllerDocs;
 import com.capston.demo.domain.user.dto.UserProfileDto;
 import com.capston.demo.domain.user.dto.request.RegisterRequestDto;
 import com.capston.demo.domain.user.dto.response.UserSearchResponse;
@@ -27,7 +27,7 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
-public class UserController {
+public class UserController implements UserControllerDocs {
 
     private final UserService userService;
     private final S3Service s3Service;

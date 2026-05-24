@@ -1,6 +1,6 @@
 package com.capston.demo.domain.user.controller;
 
-
+import com.capston.demo.domain.user.controllerDocs.OAuth2ControllerDocs;
 import com.capston.demo.domain.user.dto.OAuthUserInfo;
 import com.capston.demo.domain.user.dto.request.CreateNotionCalendarDatabaseRequestDto;
 import com.capston.demo.domain.user.dto.request.SetCalendarDatabaseRequestDto;
@@ -36,7 +36,7 @@ import java.util.Map;
 @RequestMapping("/api/oauth2")
 @RequiredArgsConstructor
 @Slf4j
-public class OAuth2Controller {
+public class OAuth2Controller implements OAuth2ControllerDocs {
 
     // 각 OAuth 제공자별 액세스 토큰/유저 정보 처리 서비스
     private final GoogleOAuth2Service googleOAuth2Service;
@@ -156,8 +156,8 @@ public class OAuth2Controller {
                 return ResponseEntity.badRequest().build(); //400 Bad Request 반환
             }
 
-            String accessToken = notionOAuth2Service.exchangeCodeForToken(code); //인증 코드를 엑세스 토큰으로 교환
-            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken); //엑세스 토큰으로 사용자 정보 조회
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code);
+            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
             User user = oAuthUserService.processOAuthUser(userInfo); //사용자 정보를 처리하여 User 엔티티로 변환 및 저장
             // 노션으로 로그인 시 해당 유저에 Notion 연동 정보 자동 저장 (캘린더 동기화 등 사용)
             notionOAuth2Service.linkNotionAccount(user, userInfo, accessToken, userNotionAccountRepository); //Notion 계정 연동 정보 저장
@@ -236,7 +236,7 @@ public class OAuth2Controller {
         try {
             // LINK 플로우: auth-url 과 동일한 redirect_uri 로 code 교환
             String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LINK);
-            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken); //엑세스 토큰으로 사용자 정보 조회
+            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
 
             // 현재 로그인한 사용자 정보에서 userId 조회
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -256,7 +256,7 @@ public class OAuth2Controller {
     }
 
     /**
-     * Notion 연동·캘린더 설정 상태 조회 (설정 화면용).
+     * Notion 연동·캘린더·회의록 DB 설정 상태 조회 (설정 화면용).
      * 미연동이어도 200 + linked=false 반환.
      */
     @GetMapping("/notion/status")
@@ -288,7 +288,7 @@ public class OAuth2Controller {
         Long userId = userDetails.getUserId();
 
         return userNotionAccountRepository.findByUser_Id(userId)
-                .map(account -> {
+                .<ResponseEntity<?>>map(account -> {
                     List<NotionCalendarTargetResponse> targets =
                             notionCalendarService.searchCalendarTargets(account.getAccessToken());
                     return ResponseEntity.ok(targets);
@@ -364,6 +364,42 @@ public class OAuth2Controller {
     }
 
     /**
+     * Notion에 회의록 export용 database를 새로 생성하고, 해당 유저의 연동 정보에 자동 등록한다.
+     * parentPageId 없으면 연동 워크스페이스의 첫 페이지 아래에 생성한다.
+     */
+    @PostMapping("/notion/meeting-notes-targets")
+    public ResponseEntity<?> createNotionMeetingNotesTarget(
+            @RequestBody(required = false) CreateNotionCalendarDatabaseRequestDto request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        Long userId = userDetails.getUserId();
+
+        String name = request != null ? request.getName() : null;
+        String parentPageId = request != null ? request.getParentPageId() : null;
+
+        return userNotionAccountRepository.findByUser_Id(userId)
+                .map(account -> {
+                    NotionCalendarTargetResponse created = notionCalendarService.createMeetingNotesDatabase(
+                            account.getAccessToken(), name, parentPageId);
+                    account.setMeetingNotesDatabaseId(created.getId());
+                    userNotionAccountRepository.save(account);
+                    return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                            "id", created.getId(),
+                            "name", created.getName(),
+                            "type", created.getType(),
+                            "url", created.getUrl() != null ? created.getUrl() : "",
+                            "message", "회의록 데이터베이스가 생성·등록되었습니다.",
+                            "meetingNotesConfigured", true
+                    ));
+                })
+                .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
+    }
+
+    /**
      * 회의록 export에 사용할 노션 데이터베이스를 등록한다.
      */
     @PutMapping("/notion/meeting-notes-database")
@@ -393,19 +429,29 @@ public class OAuth2Controller {
                 .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
     }
 
-    private NotionStatusResponse buildNotionStatus(UserNotionAccount account) {
-        String databaseId = account.getCalendarDatabaseId();
-        boolean calendarConfigured = databaseId != null && !databaseId.isBlank();
+    private NotionStatusResponse buildNotionStatus(UserNotionAccount account) { //Notion 상태 응답 생성
+        String calendarDatabaseId = account.getCalendarDatabaseId(); //캘린더 데이터베이스 ID 추출
+        boolean calendarConfigured = calendarDatabaseId != null && !calendarDatabaseId.isBlank(); //캘린더 데이터베이스 설정 여부 확인
         String calendarName = null;
         if (calendarConfigured) {
-            calendarName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), databaseId);
+            calendarName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), calendarDatabaseId); //캘린더 데이터베이스 이름 추출
         }
-        return new NotionStatusResponse(
-                true,
-                calendarConfigured,
-                account.getNotionName(),
-                calendarName
-        );
+
+        String meetingNotesDatabaseId = account.getMeetingNotesDatabaseId(); //회의록 데이터베이스 ID 추출
+        boolean meetingNotesConfigured = meetingNotesDatabaseId != null && !meetingNotesDatabaseId.isBlank(); //회의록 데이터베이스 설정 여부 확인
+        String meetingNotesName = null;
+        if (meetingNotesConfigured) {
+            meetingNotesName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), meetingNotesDatabaseId); //회의록 데이터베이스 이름 추출
+        }
+
+        return new NotionStatusResponse( //Notion 상태 응답 생성
+                true, //연동 여부 설정
+                calendarConfigured, //캘린더 데이터베이스 설정 여부 설정
+                account.getNotionName(), //Notion 이름 설정
+                calendarName, //캘린더 데이터베이스 이름 설정
+                meetingNotesConfigured, //회의록 데이터베이스 설정 여부 설정
+                meetingNotesName //회의록 데이터베이스 이름 설정
+        ); //Notion 상태 응답 생성
     }
 
     /**

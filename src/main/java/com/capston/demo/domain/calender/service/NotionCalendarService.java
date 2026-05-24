@@ -42,6 +42,7 @@ public class NotionCalendarService {
     private static final String CALENDAR_TITLE_PROPERTY = "Name";
     private static final String CALENDAR_DATE_PROPERTY = "Date";
     private static final String DEFAULT_CALENDAR_DATABASE_NAME = "Meetflow 일정";
+    private static final String DEFAULT_MEETING_NOTES_DATABASE_NAME = "Meetflow 회의록";
 
     /**
      * OAuth로 접근 가능한 Notion database 목록 조회 (캘린더 연결 화면용).
@@ -130,8 +131,24 @@ public class NotionCalendarService {
      * @param parentPageId null 이면 search 로 첫 page 사용
      */
     public NotionCalendarTargetResponse createCalendarDatabase(String accessToken, String name, String parentPageId) {
+        return createNameDateDatabase(accessToken, name, parentPageId, DEFAULT_CALENDAR_DATABASE_NAME);
+    }
+
+    /**
+     * Notion에 회의록 export용 database를 새로 생성한다 (Name·Date 속성 — 캘린더와 동일).
+     *
+     * @param parentPageId null 이면 search 로 첫 page 사용
+     */
+    public NotionCalendarTargetResponse createMeetingNotesDatabase(String accessToken, String name, String parentPageId) {
+        return createNameDateDatabase(accessToken, name, parentPageId, DEFAULT_MEETING_NOTES_DATABASE_NAME);
+    }
+
+    private NotionCalendarTargetResponse createNameDateDatabase(String accessToken,
+                                                                String name,
+                                                                String parentPageId,
+                                                                String defaultName) {
         try {
-            String dbName = (name == null || name.isBlank()) ? DEFAULT_CALENDAR_DATABASE_NAME : name.trim();
+            String dbName = (name == null || name.isBlank()) ? defaultName : name.trim();
             String resolvedParentPageId = resolveParentPageId(accessToken, parentPageId);
 
             Map<String, Object> parent = Map.of(
@@ -166,7 +183,8 @@ public class NotionCalendarService {
                 throw new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED);
             }
 
-            return mapDatabaseResult(response.getBody())
+            Map<String, Object> responseBody = response.getBody();
+            return mapDatabaseResult(responseBody)
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED));
         } catch (BusinessException e) {
             throw e;
