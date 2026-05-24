@@ -42,13 +42,15 @@ public class OAuthUserService {
                         existingUser.setOauthLinkedAt(LocalDateTime.now());
                     }
                     // 이름·프로필은 앱에서 수정 가능 — 비어 있을 때만 OAuth 값으로 채움
+                    // Notion 로그인은 재로그인 시에도 이름을 갱신 (과거 bot 이름 저장 계정 보정)
                     if (isBlank(existingUser.getProfileImg())
                             && userInfo.getPicture() != null && !userInfo.getPicture().isEmpty()) {
                         existingUser.setProfileImg(userInfo.getPicture());
                     }
-                    if (isBlank(existingUser.getName())
-                            && userInfo.getName() != null && !userInfo.getName().isBlank()) {
-                        existingUser.setName(userInfo.getName());
+                    if (userInfo.getName() != null && !userInfo.getName().isBlank()) {
+                        if (isBlank(existingUser.getName()) || isNotionLogin(userInfo)) {
+                            existingUser.setName(userInfo.getName());
+                        }
                     }
                     return userRepository.save(existingUser);
                 })
@@ -68,6 +70,10 @@ public class OAuthUserService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static boolean isNotionLogin(OAuthUserInfo userInfo) {
+        return "notion".equalsIgnoreCase(userInfo.getProvider());
     }
 }
 

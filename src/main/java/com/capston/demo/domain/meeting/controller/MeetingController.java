@@ -94,10 +94,35 @@ public class MeetingController implements MeetingControllerDocs {
         ContentDisposition disposition = ContentDisposition.attachment() // 다운로드 파일명
                 .filename(result.fileName(), StandardCharsets.UTF_8)
                 .build(); // 한글 파일명 지원 (UTF-8)
-        return ResponseEntity.ok() // 회의 리포트 PDF 바이너리 반환
-                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString()) // 다운로드 파일명
-                .contentType(MediaType.APPLICATION_PDF) // application/pdf
-                .body(result.pdfBytes()); // 회의 리포트 PDF 바이너리 반환
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(result.pdfBytes());
+    }
+
+    /**
+     * 대화록 PDF 내보내기
+     * GET /api/meetings/{id}/export/transcript/pdf?includeTimestamps=true
+     *
+     * - JWT 인증 필수, 회의 접근 권한은 MeetingExportService에서 검증
+     * - STT 전사 완료(segments 존재) 후 사용 가능 (AI 분석 불필요)
+     * - includeTimestamps=false 이면 화자·발화 내용만 포함
+     */
+    @GetMapping("/{id}/export/transcript/pdf")
+    public ResponseEntity<byte[]> exportTranscriptPdf(
+            @AuthenticationPrincipal CustomUserDetails userDetails,
+            @PathVariable Long id,
+            @RequestParam(defaultValue = "true") boolean includeTimestamps) {
+        MeetingExportService.ExportResult result =
+                meetingExportService.exportTranscriptPdf(id, userDetails.getUserId(), includeTimestamps);
+
+        ContentDisposition disposition = ContentDisposition.attachment()
+                .filename(result.fileName(), StandardCharsets.UTF_8)
+                .build();
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, disposition.toString())
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(result.pdfBytes());
     }
 
     /**

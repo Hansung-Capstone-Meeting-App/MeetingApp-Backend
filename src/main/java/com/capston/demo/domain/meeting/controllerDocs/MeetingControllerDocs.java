@@ -98,6 +98,29 @@ public interface MeetingControllerDocs {
                                             boolean includeEvents);
 
     @Operation(
+            summary = "대화록 PDF 내보내기",
+            description = "STT 전사가 완료된 회의의 화자별 대화 내용을 PDF로 반환합니다.\n\n" +
+                    "- `includeTimestamps=false` 시 발화 시각 제외\n" +
+                    "- AI 분석(summary) 없이 STT만 완료되어도 사용 가능\n" +
+                    "- 전사 전(segments 없음)이면 400",
+            parameters = {
+                    @Parameter(name = "id", description = "회의 ID", example = "1", required = true),
+                    @Parameter(name = "includeTimestamps", description = "발화 시각 포함 여부", example = "true")
+            },
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "PDF 파일",
+                            content = @Content(mediaType = "application/pdf")),
+                    @ApiResponse(responseCode = "400", description = "STT 전사 미완료"),
+                    @ApiResponse(responseCode = "403", description = "접근 권한 없음"),
+                    @ApiResponse(responseCode = "404", description = "회의를 찾을 수 없음"),
+                    @ApiResponse(responseCode = "500", description = "PDF 생성 실패")
+            }
+    )
+    ResponseEntity<byte[]> exportTranscriptPdf(@AuthenticationPrincipal CustomUserDetails userDetails,
+                                               Long id,
+                                               boolean includeTimestamps);
+
+    @Operation(
             summary = "회의 리포트 Notion보내기",
             description = "AI 분석이 완료된 회의의 요약·키워드·할일(·일정)을 Notion 회의록 DB에보냅니다.\n\n" +
                     "- 사전 설정: Notion 연동 + `PUT /api/oauth2/notion/meeting-notes-database`\n" +

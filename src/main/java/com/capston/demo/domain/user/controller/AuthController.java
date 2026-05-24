@@ -1,6 +1,6 @@
 package com.capston.demo.domain.user.controller;
 
-
+import com.capston.demo.domain.user.controllerDocs.AuthControllerDocs;
 import com.capston.demo.domain.user.dto.request.LoginRequestDto;
 import com.capston.demo.domain.user.dto.request.LogoutRequestDto;
 import com.capston.demo.domain.user.dto.request.RefreshTokenRequestDto;
@@ -21,7 +21,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/auth")
 @RequiredArgsConstructor
-public class AuthController {
+public class AuthController implements AuthControllerDocs {
 
     private final AuthService authService;
 
