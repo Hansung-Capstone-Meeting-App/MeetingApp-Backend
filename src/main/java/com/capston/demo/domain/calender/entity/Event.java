@@ -61,6 +61,13 @@ public class Event {
     // 이벤트가 생성된 시각
     private LocalDateTime createdAt = LocalDateTime.now();
 
+    /** Notion 캘린더 DB에 생성된 페이지 ID (재동기화 시 갱신) */
+    @Column(name = "notion_page_id", length = 100)
+    private String notionPageId;
+
+    @Column(name = "notion_synced_at")
+    private LocalDateTime notionSyncedAt;
+
     // 이 이벤트에 참여하는 사용자 목록 (참여자 도메인과의 1:N 관계)
     @OneToMany(mappedBy = "event", cascade = CascadeType.ALL)
     private List<EventParticipant> participants = new ArrayList<>();

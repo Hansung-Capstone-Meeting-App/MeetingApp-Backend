@@ -6,9 +6,12 @@ import com.capston.demo.domain.calender.dto.request.NotionSyncRequestDto;
 import com.capston.demo.domain.calender.entity.Event;
 import com.capston.demo.domain.calender.repository.EventRepository;
 import com.capston.demo.domain.calender.service.NotionCalendarService;
+import com.capston.demo.domain.calender.service.NotionCalendarService.EventNotionSyncResult;
 import com.capston.demo.domain.user.entity.User;
+import com.capston.demo.domain.user.entity.Workspace;
 import com.capston.demo.domain.user.repository.UserNotionAccountRepository;
 import com.capston.demo.domain.user.repository.WorkspaceMemberRepository;
+import com.capston.demo.domain.user.repository.WorkspaceRepository;
 import com.capston.demo.global.security.CustomUserDetails;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -34,6 +37,8 @@ public class CalendarController implements CalendarControllerDocs {
     private final UserNotionAccountRepository userNotionAccountRepository;
     // 유저가 특정 워크스페이스의 멤버인지 확인하기 위한 리포지토리
     private final WorkspaceMemberRepository workspaceMemberRepository;
+    // 로그인 사용자가 속한 워크스페이스 목록 조회
+    private final WorkspaceRepository workspaceRepository;
 
     /**
      * 단일 Event를 Notion 캘린더에 동기화하는 엔드포인트.
@@ -68,14 +73,16 @@ public class CalendarController implements CalendarControllerDocs {
                                 if (link.getCalendarDatabaseId() == null || link.getCalendarDatabaseId().isBlank()) {
                                     return ResponseEntity.badRequest().body(Map.of("error", "캘린더로 사용할 노션 데이터베이스를 먼저 등록해주세요. PUT /api/oauth2/notion/calendar-database 를 사용하세요."));
                                 }
-                                //Event 엔티티를 기반으로 Notion 캘린더에 일정을 생성
-                                String notionPageId = notionCalendarService.createEventInNotion(event, link.getAccessToken(), link.getCalendarDatabaseId()); //event 는 우리 Event, accessToken 은 노션 OAuth 토큰, databaseId 는 유저가 지정한 캘린더용 노션 DB ID
+                                // Event 엔티티를 기반으로 Notion 캘린더에 동기화 (이미 연동된 경우 갱신)
+                                EventNotionSyncResult syncResult = notionCalendarService.syncEventInNotion(
+                                        event, link.getAccessToken(), link.getCalendarDatabaseId());
                                 return ResponseEntity.ok().body(
                                         Map.of(
-                                                "eventId", eventId, //이벤트 ID
-                                                "notionPageId", notionPageId //생성된 Notion 페이지 ID
+                                                "eventId", eventId,
+                                                "notionPageId", syncResult.notionPageId(),
+                                                "updated", syncResult.updated()
                                         )
-                                ); //생성된 Notion 페이지 ID 반환
+                                );
                             })
                             .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion account is not linked for this user"))); //Notion 계정이 연동되지 않은 경우 403 Forbidden 반환
                 })
@@ -120,17 +127,75 @@ public class CalendarController implements CalendarControllerDocs {
                     }
 
                     List<Map<String, Object>> results = events.stream()
+                            .map(event -> toSyncResultMap(event, link.getAccessToken(), link.getCalendarDatabaseId()))
+                            .toList();
+
+                    return ResponseEntity.ok().body(Map.of(
+                            "workspaceId", workspaceId,
+                            "syncedCount", results.size(),
+                            "results", results
+                    ));
+                })
+                .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion account is not linked for this user")));
+    }
+
+    /**
+     * 로그인 사용자가 멤버로 속한 모든 워크스페이스의 일정을 Notion 캘린더에 일괄 동기화한다.
+     * - 워크스페이스별 팀 전체 일정 (GET /api/events?workspaceId= 와 동일 범위)
+     */
+    @PostMapping("/notion-sync-all-workspaces")
+    public ResponseEntity<?> syncAllMyWorkspaceEventsToNotion() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).body("Authentication required");
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        Long userId = userDetails.getUserId();
+
+        return userNotionAccountRepository.findByUser(buildUserRef(userId))
+                .map(link -> {
+                    if (link.getCalendarDatabaseId() == null || link.getCalendarDatabaseId().isBlank()) {
+                        return ResponseEntity.badRequest().body(Map.of("error", "캘린더로 사용할 노션 데이터베이스를 먼저 등록해주세요. PUT /api/oauth2/notion/calendar-database 를 사용하세요."));
+                    }
+
+                    List<Long> workspaceIds = workspaceRepository.findAllByMemberId(userId).stream()
+                            .map(Workspace::getId)
+                            .toList();
+                    if (workspaceIds.isEmpty()) {
+                        return ResponseEntity.ok().body(Map.of(
+                                "workspaceCount", 0,
+                                "syncedCount", 0,
+                                "results", List.of()
+                        ));
+                    }
+
+                    List<Event> events = eventRepository.findByWorkspaceIdIn(workspaceIds);
+                    if (events.isEmpty()) {
+                        return ResponseEntity.ok().body(Map.of(
+                                "workspaceCount", workspaceIds.size(),
+                                "syncedCount", 0,
+                                "results", List.of()
+                        ));
+                    }
+
+                    String accessToken = link.getAccessToken();
+                    String databaseId = link.getCalendarDatabaseId();
+                    List<Map<String, Object>> results = events.stream()
                             .map(event -> {
-                                String notionPageId = notionCalendarService.createEventInNotion(event, link.getAccessToken(), link.getCalendarDatabaseId());
+                                EventNotionSyncResult syncResult = notionCalendarService.syncEventInNotion(
+                                        event, accessToken, databaseId);
                                 return Map.<String, Object>of(
                                         "eventId", event.getId(),
-                                        "notionPageId", notionPageId
+                                        "workspaceId", event.getWorkspaceId(),
+                                        "notionPageId", syncResult.notionPageId(),
+                                        "updated", syncResult.updated()
                                 );
                             })
                             .toList();
 
                     return ResponseEntity.ok().body(Map.of(
-                            "workspaceId", workspaceId,
+                            "workspaceCount", workspaceIds.size(),
                             "syncedCount", results.size(),
                             "results", results
                     ));
@@ -203,11 +268,13 @@ public class CalendarController implements CalendarControllerDocs {
                                             );
                                         }
 
-                                        String notionPageId = notionCalendarService.createEventInNotion(event, accessToken, databaseId);
+                                        EventNotionSyncResult syncResult = notionCalendarService.syncEventInNotion(
+                                                event, accessToken, databaseId);
                                         return Map.<String, Object>of(
                                                 "eventId", id,
                                                 "status", "SUCCESS",
-                                                "notionPageId", notionPageId
+                                                "notionPageId", syncResult.notionPageId(),
+                                                "updated", syncResult.updated()
                                         );
                                     })
                                     .orElseGet(() -> Map.<String, Object>of(
@@ -226,6 +293,15 @@ public class CalendarController implements CalendarControllerDocs {
 
     // User 리포지토리를 직접 사용하지 않고도, userId 만으로
     // User 프록시(참조용 객체)를 만들어 JPA 연관관계 조회에 활용하기 위한 헬퍼 메서드
+    private Map<String, Object> toSyncResultMap(Event event, String accessToken, String databaseId) {
+        EventNotionSyncResult syncResult = notionCalendarService.syncEventInNotion(event, accessToken, databaseId);
+        return Map.of(
+                "eventId", event.getId(),
+                "notionPageId", syncResult.notionPageId(),
+                "updated", syncResult.updated()
+        );
+    }
+
     private User buildUserRef(Long userId) {
         User u = new User();
         u.setId(userId);

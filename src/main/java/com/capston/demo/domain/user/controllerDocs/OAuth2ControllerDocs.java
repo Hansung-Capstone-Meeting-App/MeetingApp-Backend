@@ -62,7 +62,7 @@ public interface OAuth2ControllerDocs {
                     @ApiResponse(responseCode = "302", description = "앱 딥링크로 리다이렉트")
             }
     )
-    ResponseEntity<Void> notionLinkCallback(String code, String error);
+    ResponseEntity<String> notionLinkCallback(String code, String error, String state);
 
     @Operation(
             summary = "Google OAuth 콜백 (POST)",
@@ -215,7 +215,11 @@ public interface OAuth2ControllerDocs {
 
     @Operation(
             summary = "Notion 캘린더 DB 등록",
-            description = "기존 Notion database URL 또는 ID를 캘린더 동기화 대상으로 등록합니다.",
+            description = """
+                    기존 Notion database URL 또는 ID를 캘린더 동기화 대상으로 등록합니다.
+                    - `resetExistingEventLinks=true`: 내 워크스페이스 일정의 notion_page_id·notion_synced_at 초기화
+                    - 등록 DB ID가 이전과 다르면 위 옵션 없이도 자동 초기화 (다음 동기화 시 새 DB에 페이지 생성)
+                    """,
             requestBody = @RequestBody(
                     required = true,
                     content = @Content(
@@ -225,7 +229,8 @@ public interface OAuth2ControllerDocs {
                                     name = "요청 예시",
                                     value = """
                                             {
-                                              "databaseUrl": "https://www.notion.so/workspace/3230e99b88308071b256df5dfcc8bfe7"
+                                              "databaseUrl": "https://www.notion.so/workspace/3230e99b88308071b256df5dfcc8bfe7",
+                                              "resetExistingEventLinks": true
                                             }
                                             """
                             )
