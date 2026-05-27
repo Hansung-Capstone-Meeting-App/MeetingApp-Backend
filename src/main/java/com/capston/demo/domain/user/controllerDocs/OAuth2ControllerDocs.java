@@ -22,51 +22,95 @@ public interface OAuth2ControllerDocs {
 
     @Operation(
             summary = "Google OAuth 인증 URL 조회",
-            description = "모바일/웹 앱이 리다이렉트할 Google 로그인 URL을 반환합니다.",
+            description = """
+                    Google 로그인 URL과 redirectUri 반환.
+                    - client=web(기본): /google/callback (GET JWT)
+                    - client=mobile: /google/callback/mobile (HTML → meetflow://oauth/google)
+                    """,
             responses = {
                     @ApiResponse(responseCode = "200", description = "조회 성공")
             }
     )
-    ResponseEntity<Map<String, String>> getGoogleAuthUrl();
+    ResponseEntity<Map<String, String>> getGoogleAuthUrl(
+            @Parameter(description = "web(기본) | mobile") String client);
 
     @Operation(
             summary = "Notion OAuth 인증 URL 조회 (로그인)",
-            description = "Notion으로 로그인(신규/기존 계정)할 때 사용하는 인증 URL과 redirectUri를 반환합니다.",
+            description = """
+                    Notion 로그인 인증 URL과 redirectUri를 반환합니다.
+                    - client=web: /notion/callback (GET JWT)
+                    - client=mobile: /notion/callback/mobile (HTML → meetflow://oauth/notion)
+                    """,
             responses = {
                     @ApiResponse(responseCode = "200", description = "조회 성공")
             }
     )
-    ResponseEntity<Map<String, String>> getNotionAuthUrl();
+    ResponseEntity<Map<String, String>> getNotionAuthUrl(
+            @Parameter(description = "web(기본) | mobile") String client);
 
     @Operation(
             summary = "Notion OAuth 인증 URL 조회 (기존 계정 연동)",
-            description = "이미 로그인한 사용자가 Notion 계정을 연동할 때 사용합니다. LINK 플로우 redirectUri를 사용합니다.",
+            description = """
+                    이미 로그인한 사용자의 Notion 연동용 인증 URL.
+                    - client=web: /notion/link/callback
+                    - client=mobile: /notion/link/callback/mobile
+                    """,
             responses = {
                     @ApiResponse(responseCode = "200", description = "조회 성공")
             }
     )
-    ResponseEntity<Map<String, String>> getNotionLinkAuthUrl();
+    ResponseEntity<Map<String, String>> getNotionLinkAuthUrl(
+            @Parameter(description = "web(기본) | mobile") String client);
 
     @Operation(
-            summary = "Notion 연동 OAuth 브라우저 콜백",
+            summary = "Notion 연동 OAuth 웹 콜백 (Swagger용)",
             description = """
-                    Notion 연동(LINK) 플로우의 브라우저 콜백입니다.
-                    JSON/JWT를 반환하지 않고 302로 앱 딥링크(meetflow://notion/link)에 code 또는 error를 전달합니다.
-                    토큰 교환·DB 저장은 앱이 POST /api/oauth2/notion/link 로 수행합니다.
+                    Notion 연동(LINK) 웹 redirect URI 콜백. code를 JSON으로 반환합니다.
+                    연동 완료는 POST /api/oauth2/notion/link (JWT + client=web) 로 수행합니다.
                     """,
             parameters = {
                     @Parameter(name = "code", description = "Notion 인증 코드"),
                     @Parameter(name = "error", description = "OAuth 오류 코드")
             },
             responses = {
-                    @ApiResponse(responseCode = "302", description = "앱 딥링크로 리다이렉트")
+                    @ApiResponse(responseCode = "200", description = "code JSON"),
+                    @ApiResponse(responseCode = "400", description = "code/error 누락")
             }
     )
-    ResponseEntity<String> notionLinkCallback(String code, String error, String state);
+    ResponseEntity<Map<String, String>> notionLinkCallbackWeb(String code, String error);
+
+    @Operation(
+            summary = "Notion 연동 OAuth 모바일 콜백",
+            description = "Notion LINK mobile redirect URI. HTML 브릿지로 meetflow://notion/link 에 code 전달.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "HTML 브릿지")
+            }
+    )
+    ResponseEntity<String> notionLinkCallbackMobile(String code, String error);
+
+    @Operation(
+            summary = "Google OAuth 모바일 콜백",
+            description = "Google mobile redirect URI. HTML 브릿지로 meetflow://oauth/google 에 code 전달.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "HTML 브릿지")
+            }
+    )
+    ResponseEntity<String> googleCallbackMobile(String code, String error);
+
+    @Operation(
+            summary = "Notion OAuth 모바일 콜백 (로그인)",
+            description = "Notion LOGIN mobile redirect URI. HTML 브릿지로 meetflow://oauth/notion 에 code 전달.",
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "HTML 브릿지")
+            }
+    )
+    ResponseEntity<String> notionCallbackMobile(String code, String error);
 
     @Operation(
             summary = "Google OAuth 콜백 (POST)",
-            description = "모바일 앱에서 받은 인증 코드로 JWT를 발급합니다.",
+            description = """
+                    인증 코드로 JWT 발급. client=mobile(기본) | web — auth-url 과 동일한 redirect_uri 로 code 교환.
+                    """,
             requestBody = @RequestBody(
                     required = true,
                     content = @Content(
@@ -76,7 +120,8 @@ public interface OAuth2ControllerDocs {
                                     name = "요청 예시",
                                     value = """
                                             {
-                                              "code": "4/0AeanS..."
+                                              "code": "4/0AeanS...",
+                                              "client": "mobile"
                                             }
                                             """
                             )
@@ -115,8 +160,8 @@ public interface OAuth2ControllerDocs {
     ResponseEntity<LoginResponseDto> notionCallback(OAuthCodeRequestDto request);
 
     @Operation(
-            summary = "Google OAuth 콜백 (GET)",
-            description = "Google redirect URI로 들어오는 GET 콜백입니다. 쿼리 파라미터 code로 JWT를 발급합니다.",
+            summary = "Google OAuth 콜백 (GET, 웹)",
+            description = "Google web redirect URI. 쿼리 code로 JWT 발급.",
             parameters = {
                     @Parameter(name = "code", description = "Google 인증 코드", required = true)
             },
@@ -128,8 +173,8 @@ public interface OAuth2ControllerDocs {
     ResponseEntity<LoginResponseDto> googleCallbackGet(String code);
 
     @Operation(
-            summary = "Notion OAuth 콜백 (GET, 로그인)",
-            description = "Notion redirect URI로 들어오는 GET 콜백입니다. 로그인 시 Notion 연동 정보를 자동 저장합니다.",
+            summary = "Notion OAuth 콜백 (GET, 웹 로그인)",
+            description = "Notion web redirect URI. 로그인 시 Notion 연동 정보 자동 저장.",
             parameters = {
                     @Parameter(name = "code", description = "Notion 인증 코드", required = true)
             },

@@ -1,8 +1,11 @@
 package com.capston.demo.domain.user.service;
 
 import com.capston.demo.domain.user.dto.OAuthUserInfo;
+import com.capston.demo.domain.user.oauth.OAuthCallbackBridgeHtml;
+import com.capston.demo.domain.user.oauth.OAuthClientType;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,71 +25,94 @@ public class GoogleOAuth2Service {
 
     private final RestTemplate restTemplate;
 
-    // Google OAuth 클라이언트 ID
     @Value("${spring.security.oauth2.client.registration.google.client-id}")
     private String clientId;
 
-    // Google OAuth 클라이언트 시크릿
     @Value("${spring.security.oauth2.client.registration.google.client-secret}")
     private String clientSecret;
 
-    // Google 리다이렉트 URI 템플릿 (예: {baseUrl}/api/oauth2/google/callback)
-    @Value("${spring.security.oauth2.client.registration.google.redirect-uri}")
-    private String redirectUri;
+    @Value("${spring.security.oauth2.client.registration.google.redirect-uri:{baseUrl}/api/oauth2/google/callback}")
+    private String webRedirectUriTemplate;
 
-    // Google 인증 페이지 URL
+    @Value("${spring.security.oauth2.client.registration.google.mobile-redirect-uri:{baseUrl}/api/oauth2/google/callback/mobile}")
+    private String mobileRedirectUriTemplate;
+
     @Value("${spring.security.oauth2.client.provider.google.authorization-uri}")
     private String authorizationUri;
 
-    // Google 토큰 발급 엔드포인트
     @Value("${spring.security.oauth2.client.provider.google.token-uri}")
     private String tokenUri;
 
-    // Google 사용자 정보 조회 엔드포인트
     @Value("${spring.security.oauth2.client.provider.google.user-info-uri}")
     private String userInfoUri;
 
-    // OpenID Connect 표준 스코프
+    @Value("${app.oauth.base-url:http://localhost:8080}")
+    private String oauthBaseUrl;
+
+    @Value("${app.oauth.mobile.google-deep-link:meetflow://oauth/google}")
+    private String mobileDeepLink;
+
     private final String scope = "openid profile email";
 
-    public String getGoogleAuthorizationUrl() {
-        // application.yml의 {baseUrl} 플레이스홀더를 실제 서버 주소로 치환
-        String finalRedirectUri = redirectUri.replace("{baseUrl}", "http://localhost:8080");
-        log.info("=== OAuth Debug ===");
-        log.info("Redirect URI from config: {}", redirectUri);
-        log.info("Final Redirect URI: {}", finalRedirectUri);
+    @PostConstruct
+    void logResolvedRedirectUris() {
+        log.info("Google OAuth WEB redirect_uri={}", resolveRedirectUri(OAuthClientType.WEB));
+        log.info("Google OAuth MOBILE redirect_uri={}", resolveRedirectUri(OAuthClientType.MOBILE));
+    }
 
-        String authUrl = UriComponentsBuilder.fromHttpUrl(authorizationUri)
+    public String resolveRedirectUri(OAuthClientType clientType) {
+        String template = clientType == OAuthClientType.MOBILE
+                ? mobileRedirectUriTemplate
+                : webRedirectUriTemplate;
+        String resolved = template.replace("{baseUrl}", resolveBaseUrl());
+        if (resolved.contains("{baseUrl}")) {
+            throw new IllegalStateException(
+                    "Google redirect URI가 치환되지 않았습니다. app.oauth.base-url 및 yml 템플릿을 확인하세요: " + template);
+        }
+        return resolved;
+    }
+
+    public String getGoogleAuthorizationUrl() {
+        return getGoogleAuthorizationUrl(OAuthClientType.WEB);
+    }
+
+    public String getGoogleAuthorizationUrl(OAuthClientType clientType) {
+        String redirectUri = resolveRedirectUri(clientType);
+        log.debug("Google authorization URL client={} redirect_uri={}", clientType, redirectUri);
+        return UriComponentsBuilder.fromHttpUrl(authorizationUri)
                 .queryParam("client_id", clientId)
-                .queryParam("redirect_uri", finalRedirectUri)
+                .queryParam("redirect_uri", redirectUri)
                 .queryParam("response_type", "code")
                 .queryParam("scope", scope)
                 .build()
                 .toUriString();
-
-        log.info("Full Auth URL: {}", authUrl);
-        log.info("==================");
-
-        return authUrl;
     }
 
-    // 인가 코드(code)를 Google 액세스 토큰으로 교환
+    public String buildMobileCallbackBridgeHtml(String code, String error) {
+        return OAuthCallbackBridgeHtml.build(mobileDeepLink, code, error);
+    }
+
     public String exchangeCodeForToken(String code) {
+        return exchangeCodeForToken(code, OAuthClientType.WEB);
+    }
+
+    public String exchangeCodeForToken(String code, OAuthClientType clientType) {
+        String redirectUri = resolveRedirectUri(clientType);
+        log.debug("Google token exchange client={} redirect_uri={}", clientType, redirectUri);
         return executeWithRetry(() -> {
             try {
                 HttpHeaders headers = new HttpHeaders();
                 headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
 
-                String body = UriComponentsBuilder.newInstance() 
+                String body = UriComponentsBuilder.newInstance()
                         .queryParam("code", code)
                         .queryParam("client_id", clientId)
                         .queryParam("client_secret", clientSecret)
-                        .queryParam("redirect_uri", redirectUri.replace("{baseUrl}", "http://localhost:8080"))
+                        .queryParam("redirect_uri", redirectUri)
                         .queryParam("grant_type", "authorization_code")
                         .build()
                         .getQuery();
 
-                // x-www-form-urlencoded 형식으로 토큰 엔드포인트 호출
                 HttpEntity<String> request = new HttpEntity<>(body, headers);
                 ResponseEntity<Map> response = restTemplate.exchange(
                         tokenUri,
@@ -103,7 +129,7 @@ public class GoogleOAuth2Service {
             } catch (BusinessException e) {
                 throw e;
             } catch (Exception e) {
-                log.error("Error exchanging code for token: {}", e.getMessage());
+                log.error("Error exchanging code for token (redirect_uri={}): {}", redirectUri, e.getMessage());
                 throw new BusinessException(ErrorCode.OAUTH_TOKEN_EXCHANGE_FAILED, e);
             }
         });
@@ -144,6 +170,14 @@ public class GoogleOAuth2Service {
         });
     }
 
+    private String resolveBaseUrl() {
+        String base = oauthBaseUrl == null ? "" : oauthBaseUrl.trim();
+        if (base.endsWith("/")) {
+            base = base.substring(0, base.length() - 1);
+        }
+        return base.isEmpty() ? "http://localhost:8080" : base;
+    }
+
     private <T> T executeWithRetry(java.util.function.Supplier<T> operation) {
         try {
             return operation.get();
@@ -153,4 +187,3 @@ public class GoogleOAuth2Service {
         }
     }
 }
-

@@ -3,6 +3,8 @@ package com.capston.demo.domain.user.service;
 import com.capston.demo.domain.user.dto.OAuthUserInfo;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.entity.UserNotionAccount;
+import com.capston.demo.domain.user.oauth.OAuthCallbackBridgeHtml;
+import com.capston.demo.domain.user.oauth.OAuthClientType;
 import com.capston.demo.domain.user.oauth.NotionOAuthFlow;
 import com.capston.demo.domain.user.repository.UserNotionAccountRepository;
 import com.capston.demo.global.exception.BusinessException;
@@ -17,8 +19,9 @@ import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import java.net.URI;
 import java.net.URLEncoder;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
@@ -38,13 +41,17 @@ public class NotionOAuth2Service {
     @Value("${spring.security.oauth2.client.registration.notion.client-secret}")
     private String clientSecret;
 
-    // Notion 로그인 리다이렉트 URI 템플릿 (예: {baseUrl}/api/oauth2/notion/callback)
-    @Value("${spring.security.oauth2.client.registration.notion.redirect-uri}")
+    @Value("${spring.security.oauth2.client.registration.notion.redirect-uri:{baseUrl}/api/oauth2/notion/callback}")
     private String loginRedirectUriTemplate;
 
-    // Notion 연동(기존 계정) 리다이렉트 URI 템플릿 (예: {baseUrl}/api/oauth2/notion/link/callback)
-    @Value("${spring.security.oauth2.client.registration.notion.link-redirect-uri}")
+    @Value("${spring.security.oauth2.client.registration.notion.mobile-redirect-uri:{baseUrl}/api/oauth2/notion/callback/mobile}")
+    private String loginMobileRedirectUriTemplate;
+
+    @Value("${spring.security.oauth2.client.registration.notion.link-redirect-uri:{baseUrl}/api/oauth2/notion/link/callback}")
     private String linkRedirectUriTemplate;
+
+    @Value("${spring.security.oauth2.client.registration.notion.link-mobile-redirect-uri:{baseUrl}/api/oauth2/notion/link/callback/mobile}")
+    private String linkMobileRedirectUriTemplate;
 
     // Notion 인증 페이지 URL
     @Value("${spring.security.oauth2.client.provider.notion.authorization-uri}")
@@ -66,31 +73,39 @@ public class NotionOAuth2Service {
     @Value("${app.oauth.base-url:http://localhost:8080}")
     private String oauthBaseUrl;
 
-    // 연동 콜백 후 앱으로 돌아갈 딥링크 (예: meetflow://notion/link)
+    @Value("${app.oauth.mobile.notion-login-deep-link:meetflow://oauth/notion}")
+    private String notionLoginMobileDeepLink;
+
     @Value("${app.notion.link-deep-link:meetflow://notion/link}")
     private String linkDeepLink;
 
-    @Value("${app.notion.link-web-redirect-base:http://localhost:8081}")
-    private String linkWebRedirectBase;
-
     @PostConstruct
     void logResolvedRedirectUris() {
-        // Notion Integration 콘솔에 등록한 URI와 아래 로그가 일치해야 함
-        log.info("Notion OAuth LOGIN redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LOGIN));
-        log.info("Notion OAuth LINK redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LINK));
+        log.info("Notion OAuth LOGIN WEB redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LOGIN, OAuthClientType.WEB));
+        log.info("Notion OAuth LOGIN MOBILE redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LOGIN, OAuthClientType.MOBILE));
+        log.info("Notion OAuth LINK WEB redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LINK, OAuthClientType.WEB));
+        log.info("Notion OAuth LINK MOBILE redirect_uri={}", resolveRedirectUri(NotionOAuthFlow.LINK, OAuthClientType.MOBILE));
     }
 
-    /**
-     * 플로우별 최종 redirect_uri (auth-url · token 교환 · Notion 콘솔 등록 URI 공통)
-     */
-    public String resolveRedirectUri(NotionOAuthFlow flow) { //플로우별 최종 redirect_uri (auth-url · token 교환 · Notion 콘솔 등록 URI 공통)
-        String template = flow == NotionOAuthFlow.LOGIN ? loginRedirectUriTemplate : linkRedirectUriTemplate; //플로우별 리다이렉트 URI 템플릿 설정
-        String resolved = template.replace("{baseUrl}", resolveBaseUrl()); //{baseUrl} 치환
+    public String resolveRedirectUri(NotionOAuthFlow flow) {
+        return resolveRedirectUri(flow, OAuthClientType.WEB);
+    }
+
+    public String resolveRedirectUri(NotionOAuthFlow flow, OAuthClientType clientType) {
+        String template = switch (flow) {
+            case LOGIN -> clientType == OAuthClientType.MOBILE
+                    ? loginMobileRedirectUriTemplate
+                    : loginRedirectUriTemplate;
+            case LINK -> clientType == OAuthClientType.MOBILE
+                    ? linkMobileRedirectUriTemplate
+                    : linkRedirectUriTemplate;
+        };
+        String resolved = template.replace("{baseUrl}", resolveBaseUrl());
         if (resolved.contains("{baseUrl}")) {
             throw new IllegalStateException(
-                    "Notion redirect URI가 치환되지 않았습니다. app.oauth.base-url 및 yml 템플릿을 확인하세요: " + template); //{baseUrl} 치환 실패 시 예외 발생
+                    "Notion redirect URI가 치환되지 않았습니다. app.oauth.base-url 및 yml 템플릿을 확인하세요: " + template);
         }
-        return resolved; //치환된 redirect_uri 반환
+        return resolved;
     }
 
     /** Notion 로그인용 인증 URL (redirect_uri = resolveRedirectUri(LOGIN)) */
@@ -103,11 +118,14 @@ public class NotionOAuth2Service {
         return getAuthorizationUrl(NotionOAuthFlow.LINK); //기존 계정 Notion 연동용 인증 URL (redirect_uri = resolveRedirectUri(LINK))
     }
 
-    /** auth-url 과 동일한 redirect_uri 로 Notion 인증 URL 생성 */
     public String getAuthorizationUrl(NotionOAuthFlow flow) {
-        String redirectUri = resolveRedirectUri(flow); //auth-url 과 동일한 redirect_uri 로 Notion 인증 URL 생성
-        log.debug("Notion authorization URL flow={} redirect_uri={}", flow, redirectUri);
-        return buildAuthorizationUrl(redirectUri); //auth-url 과 동일한 redirect_uri 로 Notion 인증 URL 생성
+        return getAuthorizationUrl(flow, OAuthClientType.WEB);
+    }
+
+    public String getAuthorizationUrl(NotionOAuthFlow flow, OAuthClientType clientType) {
+        String redirectUri = resolveRedirectUri(flow, clientType);
+        log.debug("Notion authorization URL flow={} client={} redirect_uri={}", flow, clientType, redirectUri);
+        return buildAuthorizationUrl(redirectUri);
     }
 
     public String resolveLoginRedirectUri() {
@@ -118,61 +136,24 @@ public class NotionOAuth2Service {
         return resolveRedirectUri(NotionOAuthFlow.LINK); //기존 계정 Notion 연동용 인증 URL (redirect_uri = resolveRedirectUri(LINK))
     }
 
-    /** 연동 콜백 → 앱 딥링크 URL (code 또는 error 쿼리) */
-    public String buildLinkDeepLinkRedirect(String code, String error) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(linkDeepLink); //연동 콜백 → 앱 딥링크 URL (code 또는 error 쿼리)
-        if (code != null && !code.isBlank()) {
-            builder.queryParam("code", code); //code 파라미터 추가
-        } else {
-            String err = (error != null && !error.isBlank()) ? error : "missing_code";
-            builder.queryParam("error", err); //error 파라미터 추가
-        }
-        return builder.build(true).toUriString(); //딥링크 URL 생성
+    public String buildLoginMobileCallbackBridgeHtml(String code, String error) {
+        return OAuthCallbackBridgeHtml.build(notionLoginMobileDeepLink, code, error);
     }
 
-    public String buildLinkCallbackBridgeHtml(String code, String error, String state) {
-        String deepLink = buildLinkDeepLinkRedirect(code, error);
-        String webRedirect = buildLinkWebRedirect(code, error, state);
-        String webOrigin = resolveOrigin(linkWebRedirectBase);
+    public String buildLinkMobileCallbackBridgeHtml(String code, String error) {
+        return OAuthCallbackBridgeHtml.build(linkDeepLink, code, error);
+    }
 
-        return """
-                <!doctype html>
-                <html lang="ko">
-                <head>
-                  <meta charset="utf-8">
-                  <title>Notion link callback</title>
-                </head>
-                <body>
-                <script>
-                (function () {
-                  var payload = { type: "meetflow:notion-link", code: "%s", error: "%s", state: "%s" };
-                  var webRedirect = "%s";
-                  var deepLink = "%s";
-                  var webOrigin = "%s";
-                  try {
-                    if (window.opener && !window.opener.closed) {
-                      window.opener.postMessage(payload, webOrigin);
-                      window.close();
-                      return;
-                    }
-                  } catch (e) {}
-                  if (payload.state && payload.state.indexOf("meetflow-") === 0) {
-                    window.location.replace(webRedirect);
-                    return;
-                  }
-                  window.location.replace(deepLink);
-                })();
-                </script>
-                </body>
-                </html>
-                """.formatted(
-                escapeJs(code),
-                escapeJs(error != null && !error.isBlank() ? error : (code == null || code.isBlank() ? "missing_code" : "")),
-                escapeJs(state),
-                escapeJs(webRedirect),
-                escapeJs(deepLink),
-                escapeJs(webOrigin)
-        );
+    /**
+     * Notion 연동 웹(Swagger) 콜백 응답 — code를 JSON으로 반환.
+     * 연동 완료는 POST /api/oauth2/notion/link (JWT + client=web) 로 수행.
+     */
+    public Map<String, String> buildLinkWebCallbackResponse(String code) {
+        Map<String, String> body = new LinkedHashMap<>();
+        body.put("code", code);
+        body.put("client", OAuthClientType.WEB.name().toLowerCase());
+        body.put("message", "POST /api/oauth2/notion/link with Authorization Bearer JWT and body { \"code\": \"<code>\", \"client\": \"web\" }");
+        return body;
     }
 
     // 인가 코드(code)를 Notion 액세스 토큰으로 교환 (로그인 플로우 — LOGIN redirect_uri)
@@ -180,14 +161,14 @@ public class NotionOAuth2Service {
         return exchangeCodeForToken(code, NotionOAuthFlow.LOGIN); //인가 코드(code)를 Notion 액세스 토큰으로 교환 (로그인 플로우 — LOGIN redirect_uri)
     }
 
-    /**
-     * 인가 코드를 토큰으로 교환.
-     * redirect_uri 는 해당 플로우의 auth-url 과 동일한 값만 사용 (임의 URI 전달 불가).
-     */
     public String exchangeCodeForToken(String code, NotionOAuthFlow flow) {
-        String redirectUri = resolveRedirectUri(flow); //auth-url 과 동일한 redirect_uri 로 Notion 인증 URL 생성
-        log.debug("Notion token exchange flow={} redirect_uri={}", flow, redirectUri);
-        return exchangeCodeForTokenInternal(code, redirectUri); //인가 코드(code)를 Notion 액세스 토큰으로 교환 (로그인 플로우 — LOGIN redirect_uri)
+        return exchangeCodeForToken(code, flow, OAuthClientType.WEB);
+    }
+
+    public String exchangeCodeForToken(String code, NotionOAuthFlow flow, OAuthClientType clientType) {
+        String redirectUri = resolveRedirectUri(flow, clientType);
+        log.debug("Notion token exchange flow={} client={} redirect_uri={}", flow, clientType, redirectUri);
+        return exchangeCodeForTokenInternal(code, redirectUri);
     }
 
     private String exchangeCodeForTokenInternal(String code, String redirectUri) {
@@ -292,53 +273,6 @@ public class NotionOAuth2Service {
                 .queryParam("owner", "user") //소유자 설정
                 .build(true)
                 .toUriString(); //Notion 인증 URL 생성
-    }
-
-    private String buildLinkWebRedirect(String code, String error, String state) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(normalizeWebRedirectBase());
-        if (code != null && !code.isBlank()) {
-            builder.queryParam("code", code);
-        } else {
-            builder.queryParam("error", error != null && !error.isBlank() ? error : "missing_code");
-        }
-        if (state != null && !state.isBlank()) {
-            builder.queryParam("state", state);
-        }
-        return builder.build().toUriString();
-    }
-
-    private String normalizeWebRedirectBase() {
-        try {
-            URI uri = URI.create(linkWebRedirectBase);
-            if ((uri.getPath() == null || uri.getPath().isBlank()) && uri.getQuery() == null) {
-                return uri.getScheme() + "://" + uri.getAuthority() + "/";
-            }
-        } catch (Exception ignored) {
-        }
-        return linkWebRedirectBase;
-    }
-
-    private String resolveOrigin(String url) {
-        try {
-            URI uri = URI.create(url);
-            if (uri.getScheme() != null && uri.getAuthority() != null) {
-                return uri.getScheme() + "://" + uri.getAuthority();
-            }
-        } catch (Exception ignored) {
-        }
-        return "*";
-    }
-
-    private String escapeJs(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value
-                .replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("</", "<\\/");
     }
 
     private String resolveBaseUrl() {
