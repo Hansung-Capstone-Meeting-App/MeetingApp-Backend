@@ -1,18 +1,23 @@
 package com.capston.demo.domain.calender.service;
 
 import com.capston.demo.domain.calender.entity.Event;
+import com.capston.demo.domain.calender.repository.EventRepository;
 import com.capston.demo.domain.user.dto.response.NotionCalendarTargetResponse;
 import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.*;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
+import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -28,6 +33,9 @@ public class NotionCalendarService {
 
     // HTTP 요청을 보내기 위한 Spring의 RestTemplate
     private final RestTemplate restTemplate;
+    private final EventRepository eventRepository;
+
+    public record EventNotionSyncResult(String notionPageId, boolean updated) {}
 
     // 사용할 Notion API 버전 (요청 헤더에 넣어야 함)
     @Value("${spring.security.oauth2.client.provider.notion.notion-version:2022-06-28}")
@@ -566,6 +574,44 @@ public class NotionCalendarService {
     }
 
     /**
+     * Event를 Notion에 동기화하고 notionPageId를 DB에 저장한다.
+     * 이미 동기화된 적 있으면 동일 페이지를 갱신한다 (중복 페이지 방지).
+     */
+    @Transactional
+    public EventNotionSyncResult syncEventInNotion(Event event, String accessToken, String databaseId) {
+        EventNotionSyncResult result;
+        String existingPageId = event.getNotionPageId();
+
+        if (StringUtils.hasText(existingPageId) && !isNotionPageUnavailable(accessToken, existingPageId)) {
+            try {
+                updateEventInNotion(event, accessToken, existingPageId);
+                result = new EventNotionSyncResult(existingPageId, true);
+            } catch (HttpClientErrorException e) {
+                if (shouldRecreateNotionPage(e)) {
+                    log.warn("Notion page update failed for event {}, creating a new page. pageId={}, status={}, body={}",
+                            event.getId(), existingPageId, e.getStatusCode().value(), e.getResponseBodyAsString());
+                    result = new EventNotionSyncResult(createEventInNotion(event, accessToken, databaseId), false);
+                } else {
+                    log.error("Notion API error while updating event: status={}, body={}",
+                            e.getStatusCode().value(), e.getResponseBodyAsString(), e);
+                    throw new BusinessException(ErrorCode.NOTION_EVENT_CREATE_FAILED, e);
+                }
+            }
+        } else if (StringUtils.hasText(existingPageId)) {
+            log.warn("Notion page unavailable for event {}, creating a new page. pageId={}",
+                    event.getId(), existingPageId);
+            result = new EventNotionSyncResult(createEventInNotion(event, accessToken, databaseId), false);
+        } else {
+            result = new EventNotionSyncResult(createEventInNotion(event, accessToken, databaseId), false);
+        }
+
+        event.setNotionPageId(result.notionPageId());
+        event.setNotionSyncedAt(LocalDateTime.now());
+        eventRepository.save(event);
+        return result;
+    }
+
+    /**
      * Event 엔티티 정보를 기반으로 Notion 캘린더(데이터베이스)에 일정을 생성한다.
      *
      * @param event       생성할 이벤트
@@ -573,7 +619,7 @@ public class NotionCalendarService {
      * @param databaseId  일정을 생성할 노션 데이터베이스 ID (유저별로 등록한 값)
      * @return 생성된 Notion 페이지 ID
      */
-    public String createEventInNotion(Event event, String accessToken, String databaseId) { //Event 엔티티를 기반으로 Notion 캘린더에 일정을 생성
+    private String createEventInNotion(Event event, String accessToken, String databaseId) {
         try {
             HttpHeaders headers = notionHeaders(accessToken); //요청 헤더 구성 (JSON, Bearer 토큰, Notion-Version)
 
@@ -615,37 +661,92 @@ public class NotionCalendarService {
         }
     }
 
+    private void updateEventInNotion(Event event, String accessToken, String pageId) {
+        HttpHeaders headers = notionHeaders(accessToken);
+        Map<String, Object> body = Map.of("properties", buildNotionPageProperties(event));
+        HttpEntity<Map<String, Object>> requestEntity = new HttpEntity<>(body, headers);
+        restTemplate.exchange(
+                NOTION_PAGES_URL + "/" + pageId,
+                HttpMethod.PATCH,
+                requestEntity,
+                new ParameterizedTypeReference<Map<String, Object>>() {}
+        );
+    }
+
+    /**
+     * Notion에서 삭제(archive)되었거나 더 이상 조회·수정할 수 없는 페이지인지 확인한다.
+     */
+    private boolean isNotionPageUnavailable(String accessToken, String pageId) {
+        try {
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_PAGES_URL + "/" + pageId,
+                    HttpMethod.GET,
+                    new HttpEntity<>(notionHeaders(accessToken)),
+                    Map.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                return true;
+            }
+            return Boolean.TRUE.equals(response.getBody().get("archived"));
+        } catch (HttpClientErrorException e) {
+            if (shouldRecreateNotionPage(e)) {
+                return true;
+            }
+            throw e;
+        }
+    }
+
+    /**
+     * PATCH 실패 시 새 Notion 페이지를 만들어야 하는지 판단한다.
+     * Spring Boot 3에서는 {@code status == HttpStatus.BAD_REQUEST} 비교가 실패하므로 status code value를 사용한다.
+     */
+    private boolean shouldRecreateNotionPage(HttpClientErrorException e) {
+        int statusCode = e.getStatusCode().value();
+        if (statusCode == 404) {
+            return true;
+        }
+        if (statusCode == 400 && isArchivedOrMissingNotionError(e.getResponseBodyAsString())) {
+            return true;
+        }
+        return false;
+    }
+
+    private boolean isArchivedOrMissingNotionError(String body) {
+        if (body == null || body.isBlank()) {
+            return false;
+        }
+        String lower = body.toLowerCase();
+        return lower.contains("archived")
+                || lower.contains("object_not_found")
+                || lower.contains("could not find page")
+                || lower.contains("page_not_found");
+    }
+
     // Event 엔티티를 Notion 페이지 생성용 요청 바디(Map 구조)로 변환
     private Map<String, Object> buildNotionPageRequest(Event event, String databaseId) {
-        Map<String, Object> body = new HashMap<>(); //Notion 페이지 생성용 요청 바디(Map 구조), 리턴할 Map 생성
+        Map<String, Object> body = new HashMap<>();
+        body.put("parent", Map.of("database_id", databaseId));
+        body.put("properties", buildNotionPageProperties(event));
+        return body;
+    }
 
-        // 어떤 데이터베이스에 페이지를 생성할지 설정 (유저별 등록 DB)
-        Map<String, Object> parent = Map.of(
-                "database_id", databaseId
-        );
+    private Map<String, Object> buildNotionPageProperties(Event event) {
+        Map<String, Object> properties = new HashMap<>();
 
-        Map<String, Object> properties = new HashMap<>(); //properties 는 Notion 페이지 생성용 요청 바디(Map 구조)의 속성들을 저장할 Map
-
-        // 제목·날짜만 전송 (노션 DB 컬럼 이름이 "Name", "Date"인 경우)
         Map<String, Object> titleText = Map.of(
                 "type", "text",
                 "text", Map.of("content", event.getTitle())
         );
-        properties.put("Name", Map.of(
+        properties.put(CALENDAR_TITLE_PROPERTY, Map.of(
                 "title", new Object[]{titleText}
         ));
 
         DateTimeFormatter formatter = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
         Map<String, Object> date = new HashMap<>();
-        date.put("start", event.getStartAt().format(formatter)); //시작일시 설정
-        date.put("end", event.getEndAt().format(formatter)); //종료일시 설정
-        //properties.Date 에 시작/종료 날짜
-        properties.put("Date", Map.of("date", date)); // Date 속성에 시작일시와 종료일시 설정
-
-        // 최종 body 에 parent, properties 를 설정
-        body.put("parent", parent);
-        body.put("properties", properties);
-        return body;
+        date.put("start", event.getStartAt().format(formatter));
+        date.put("end", event.getEndAt().format(formatter));
+        properties.put(CALENDAR_DATE_PROPERTY, Map.of("date", date));
+        return properties;
     }
 }
 

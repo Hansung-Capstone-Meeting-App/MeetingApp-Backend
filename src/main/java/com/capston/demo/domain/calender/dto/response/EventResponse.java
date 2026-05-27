@@ -27,6 +27,8 @@ public class EventResponse {
     private final String createdByName;
     private final String color;
     private final LocalDateTime createdAt;
+    private final String notionPageId;
+    private final LocalDateTime notionSyncedAt;
     private final List<ParticipantResponse> participants;
     private final List<TaskSummary> relatedTasks;
 
@@ -44,6 +46,8 @@ public class EventResponse {
         this.createdByName = event.getCreatedByName();
         this.color = event.getColor();
         this.createdAt = event.getCreatedAt();
+        this.notionPageId = event.getNotionPageId();
+        this.notionSyncedAt = event.getNotionSyncedAt();
         this.participants = event.getParticipants().stream()
                 .map(ParticipantResponse::new)
                 .collect(Collectors.toList());

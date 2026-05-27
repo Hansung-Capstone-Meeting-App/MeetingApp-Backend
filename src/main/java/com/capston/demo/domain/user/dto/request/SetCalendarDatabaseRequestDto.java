@@ -16,4 +16,10 @@ public class SetCalendarDatabaseRequestDto {
 
     /** 또는 데이터베이스 ID만 직접 전달 (32자 hex, 하이픈 있음/없음 모두 가능) */
     private String databaseId;
+
+    /**
+     * true면 내가 속한 워크스페이스 일정의 notion_page_id·notion_synced_at을 초기화한다.
+     * DB ID가 이전과 다를 때는 이 값과 관계없이 자동으로 초기화된다.
+     */
+    private Boolean resetExistingEventLinks;
 }

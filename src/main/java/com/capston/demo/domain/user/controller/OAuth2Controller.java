@@ -12,8 +12,11 @@ import com.capston.demo.domain.user.entity.UserNotionAccount;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.oauth.NotionOAuthFlow;
 import com.capston.demo.global.security.CustomUserDetails;
+import com.capston.demo.domain.calender.repository.EventRepository;
 import com.capston.demo.domain.calender.service.NotionCalendarService;
+import com.capston.demo.domain.user.entity.Workspace;
 import com.capston.demo.domain.user.repository.UserNotionAccountRepository;
+import com.capston.demo.domain.user.repository.WorkspaceRepository;
 import com.capston.demo.domain.user.service.AuthService;
 import com.capston.demo.domain.user.service.GoogleOAuth2Service;
 import com.capston.demo.domain.user.service.NotionOAuth2Service;
@@ -26,8 +29,10 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -51,6 +56,8 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
     private final UserRepository userRepository;
     // Notion 캘린더 DB 검색·일정 생성
     private final NotionCalendarService notionCalendarService;
+    private final WorkspaceRepository workspaceRepository;
+    private final EventRepository eventRepository;
 
     /**
      * Google 인증 URL 반환 (모바일 앱용)
@@ -337,6 +344,7 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
      * databaseUrl(노션 DB 페이지 URL) 또는 databaseId를 보내면, 해당 유저의 Notion 연동 정보에 저장된다.
      */
     @PutMapping("/notion/calendar-database")
+    @Transactional
     public ResponseEntity<?> setCalendarDatabase(@RequestBody SetCalendarDatabaseRequestDto request) { //캘린더 동기화에 사용할 노션 데이터베이스를 등록
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
@@ -353,12 +361,29 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
 
         return userNotionAccountRepository.findByUser_Id(userId)
                 .map(account -> {
+                    String previousDatabaseId = account.getCalendarDatabaseId();
+                    boolean databaseChanged = previousDatabaseId != null
+                            && !normalizeNotionId(previousDatabaseId).equals(normalizeNotionId(databaseId));
+                    boolean shouldResetLinks = Boolean.TRUE.equals(request.getResetExistingEventLinks())
+                            || databaseChanged;
+
+                    int resetCount = 0;
+                    if (shouldResetLinks) {
+                        resetCount = clearNotionLinksForUserWorkspaces(userId);
+                    }
+
                     account.setCalendarDatabaseId(databaseId);
                     userNotionAccountRepository.save(account);
-                    return ResponseEntity.ok().body(Map.of(
-                            "message", "캘린더 데이터베이스가 등록되었습니다.",
-                            "calendarDatabaseId", databaseId
-                    ));
+
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("message", "캘린더 데이터베이스가 등록되었습니다.");
+                    body.put("calendarDatabaseId", databaseId);
+                    body.put("eventLinksReset", shouldResetLinks);
+                    body.put("resetEventCount", resetCount);
+                    if (databaseChanged) {
+                        body.put("previousCalendarDatabaseId", previousDatabaseId);
+                    }
+                    return ResponseEntity.ok().body(body);
                 })
                 .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
     }
@@ -462,6 +487,23 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
                 "authUrl", notionOAuth2Service.getAuthorizationUrl(flow),
                 "redirectUri", notionOAuth2Service.resolveRedirectUri(flow)
         );
+    }
+
+    private int clearNotionLinksForUserWorkspaces(Long userId) {
+        List<Long> workspaceIds = workspaceRepository.findAllByMemberId(userId).stream()
+                .map(Workspace::getId)
+                .toList();
+        if (workspaceIds.isEmpty()) {
+            return 0;
+        }
+        return eventRepository.clearNotionLinksByWorkspaceIds(workspaceIds);
+    }
+
+    private static String normalizeNotionId(String id) {
+        if (id == null) {
+            return "";
+        }
+        return id.replace("-", "").trim().toLowerCase();
     }
 
     /** databaseId가 있으면 그대로, 없으면 databaseUrl에서 마지막 path 세그먼트로 ID 추출 */
