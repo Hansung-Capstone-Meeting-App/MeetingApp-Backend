@@ -11,6 +11,7 @@ import com.capston.demo.domain.user.dto.response.NotionStatusResponse;
 import com.capston.demo.domain.user.entity.UserNotionAccount;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.oauth.NotionOAuthFlow;
+import com.capston.demo.domain.user.oauth.OAuthClientType;
 import com.capston.demo.global.security.CustomUserDetails;
 import com.capston.demo.domain.calender.repository.EventRepository;
 import com.capston.demo.domain.calender.service.NotionCalendarService;
@@ -60,54 +61,96 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
     private final EventRepository eventRepository;
 
     /**
-     * Google 인증 URL 반환 (모바일 앱용)
+     * Google 인증 URL 반환
      *
-     * @return Google OAuth 인증 URL
+     * @param client web(기본) | mobile — redirect_uri 및 auth-url 분기
      */
     @GetMapping("/google/auth-url")
-    public ResponseEntity<Map<String, String>> getGoogleAuthUrl() {
-        // 프론트/앱이 리다이렉트할 Google 로그인 URL 생성
-        String authUrl = googleOAuth2Service.getGoogleAuthorizationUrl();
-        return ResponseEntity.ok(Map.of("authUrl", authUrl));
+    public ResponseEntity<Map<String, String>> getGoogleAuthUrl(
+            @RequestParam(name = "client", defaultValue = "web") String client) {
+        OAuthClientType clientType = OAuthClientType.from(client);
+        return ResponseEntity.ok(oauthAuthUrlResponse(
+                googleOAuth2Service.getGoogleAuthorizationUrl(clientType),
+                googleOAuth2Service.resolveRedirectUri(clientType),
+                clientType
+        ));
     }
 
     /**
-     * Notion 인증 URL 반환 (모바일 앱용)
+     * Notion 인증 URL 반환 (로그인)
      *
-     * @return Notion OAuth 인증 URL
+     * @param client web(기본) | mobile
      */
     @GetMapping("/notion/auth-url")
-    public ResponseEntity<Map<String, String>> getNotionAuthUrl() {
-        // auth-url · code 교환 · Notion 콘솔 redirect URI 가 동일한 값 (LOGIN)
-        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LOGIN));
+    public ResponseEntity<Map<String, String>> getNotionAuthUrl(
+            @RequestParam(name = "client", defaultValue = "web") String client) {
+        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LOGIN, OAuthClientType.from(client)));
     }
 
     /**
-     * 로그인한 사용자의 Notion 연동용 인증 URL (모바일 앱용)
-     * redirect_uri는 application.yml의 link-redirect-uri 와 동일해야 함
+     * 로그인한 사용자의 Notion 연동용 인증 URL
      *
-     * @return Notion OAuth 인증 URL
+     * @param client web(기본) | mobile
      */
     @GetMapping("/notion/link/auth-url")
-    public ResponseEntity<Map<String, String>> getNotionLinkAuthUrl() {
-        // auth-url · code 교환 · Notion 콘솔 redirect URI 가 동일한 값 (LINK)
-        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LINK));
+    public ResponseEntity<Map<String, String>> getNotionLinkAuthUrl(
+            @RequestParam(name = "client", defaultValue = "web") String client) {
+        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LINK, OAuthClientType.from(client)));
     }
 
     /**
-     * Notion 연동 OAuth 브라우저 콜백 (GET)
-     * JSON/JWT 반환 없이 302로 앱 딥링크에 code 또는 error 전달.
-     * 토큰 교환·DB 저장은 앱이 POST /notion/link 로 수행.
+     * Notion 연동 OAuth 웹 콜백 (GET, Swagger용) — code JSON 반환.
+     * 연동 저장은 POST /notion/link (JWT + client=web).
      */
-    @GetMapping(value = "/notion/link/callback", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> notionLinkCallback(
+    @GetMapping("/notion/link/callback")
+    public ResponseEntity<Map<String, String>> notionLinkCallbackWeb(
             @RequestParam(required = false) String code,
-            @RequestParam(required = false) String error,
-            @RequestParam(required = false) String state) {
-        // meetflow://notion/link?code=... 또는 ?error=...
-        log.info("Notion LINK callback received. hasCode={}, error={}, state={}",
-                code != null && !code.isBlank(), error, state);
-        return ResponseEntity.ok(notionOAuth2Service.buildLinkCallbackBridgeHtml(code, error, state));
+            @RequestParam(required = false) String error) {
+        log.info("Notion LINK web callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        if (error != null && !error.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", error, "client", "web"));
+        }
+        if (code == null || code.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(notionOAuth2Service.buildLinkWebCallbackResponse(code));
+    }
+
+    /**
+     * Notion 연동 OAuth 모바일 콜백 (GET) — HTML 브릿지 → meetflow://notion/link
+     */
+    @GetMapping(value = "/notion/link/callback/mobile", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> notionLinkCallbackMobile(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String error) {
+        log.info("Notion LINK mobile callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        return ResponseEntity.ok(notionOAuth2Service.buildLinkMobileCallbackBridgeHtml(code, error));
+    }
+
+    /**
+     * Google OAuth 모바일 콜백 (GET) — HTML 브릿지 → meetflow://oauth/google
+     */
+    @GetMapping(value = "/google/callback/mobile", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> googleCallbackMobile(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String error) {
+        log.info("Google mobile callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        return ResponseEntity.ok(googleOAuth2Service.buildMobileCallbackBridgeHtml(code, error));
+    }
+
+    /**
+     * Notion OAuth 모바일 콜백 (GET, 로그인) — HTML 브릿지 → meetflow://oauth/notion
+     */
+    @GetMapping(value = "/notion/callback/mobile", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> notionCallbackMobile(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String error) {
+        log.info("Notion LOGIN mobile callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        return ResponseEntity.ok(notionOAuth2Service.buildLoginMobileCallbackBridgeHtml(code, error));
     }
 
     /**
@@ -123,12 +166,11 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
             String code = request.getCode();
 
             if (code == null || code.isEmpty()) {
-                // 클라이언트가 인증 코드를 주지 않은 경우
                 return ResponseEntity.badRequest().build();
             }
 
-            // 1. 인증 코드를 액세스 토큰으로 교환
-            String accessToken = googleOAuth2Service.exchangeCodeForToken(code);
+            OAuthClientType clientType = OAuthClientType.from(request.getClient(), OAuthClientType.MOBILE);
+            String accessToken = googleOAuth2Service.exchangeCodeForToken(code, clientType);
 
             // 2. 액세스 토큰으로 사용자 정보 조회
             OAuthUserInfo userInfo = googleOAuth2Service.getUserInfo(accessToken);
@@ -159,11 +201,11 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
             String code = request.getCode(); //인증 코드
 
             if (code == null || code.isEmpty()) {
-                // 클라이언트가 인증 코드를 주지 않은 경우
-                return ResponseEntity.badRequest().build(); //400 Bad Request 반환
+                return ResponseEntity.badRequest().build();
             }
 
-            String accessToken = notionOAuth2Service.exchangeCodeForToken(code);
+            OAuthClientType clientType = OAuthClientType.from(request.getClient(), OAuthClientType.MOBILE);
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LOGIN, clientType);
             OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
             User user = oAuthUserService.processOAuthUser(userInfo); //사용자 정보를 처리하여 User 엔티티로 변환 및 저장
             // 노션으로 로그인 시 해당 유저에 Notion 연동 정보 자동 저장 (캘린더 동기화 등 사용)
@@ -189,7 +231,7 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
             return ResponseEntity.badRequest().build();
         }
         try {
-            String accessToken = googleOAuth2Service.exchangeCodeForToken(code);
+            String accessToken = googleOAuth2Service.exchangeCodeForToken(code, OAuthClientType.WEB);
             OAuthUserInfo userInfo = googleOAuth2Service.getUserInfo(accessToken);
             User user = oAuthUserService.processOAuthUser(userInfo);
             return ResponseEntity.ok(authService.oauthLogin(user));
@@ -211,7 +253,7 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
             return ResponseEntity.badRequest().build();
         }
         try {
-            String accessToken = notionOAuth2Service.exchangeCodeForToken(code);
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LOGIN, OAuthClientType.WEB);
             OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
             User user = oAuthUserService.processOAuthUser(userInfo);
             // 노션으로 로그인 시 해당 유저에 Notion 연동 정보 자동 저장 (캘린더 동기화 등 사용)
@@ -241,8 +283,8 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
         }
 
         try {
-            // LINK 플로우: auth-url 과 동일한 redirect_uri 로 code 교환
-            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LINK);
+            OAuthClientType clientType = OAuthClientType.from(request.getClient(), OAuthClientType.MOBILE);
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LINK, clientType);
             OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
 
             // 현재 로그인한 사용자 정보에서 userId 조회
@@ -482,10 +524,19 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
     /**
      * Notion auth-url 응답 — redirectUri 를 함께 내려 Notion Integration 등록 URI 와 대조 가능
      */
-    private Map<String, String> notionAuthUrlResponse(NotionOAuthFlow flow) {
+    private Map<String, String> oauthAuthUrlResponse(String authUrl, String redirectUri, OAuthClientType clientType) {
         return Map.of(
-                "authUrl", notionOAuth2Service.getAuthorizationUrl(flow),
-                "redirectUri", notionOAuth2Service.resolveRedirectUri(flow)
+                "authUrl", authUrl,
+                "redirectUri", redirectUri,
+                "client", clientType.name().toLowerCase()
+        );
+    }
+
+    private Map<String, String> notionAuthUrlResponse(NotionOAuthFlow flow, OAuthClientType clientType) {
+        return Map.of(
+                "authUrl", notionOAuth2Service.getAuthorizationUrl(flow, clientType),
+                "redirectUri", notionOAuth2Service.resolveRedirectUri(flow, clientType),
+                "client", clientType.name().toLowerCase()
         );
     }
 
