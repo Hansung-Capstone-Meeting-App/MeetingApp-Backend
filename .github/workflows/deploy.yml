@@ -17,11 +17,10 @@ jobs:
         with:
           java-version: '17'
           distribution: 'corretto'
-          
+
       - name: Create application.yml
         run: |
-          mkdir -p src/main/resources
-          echo "${{ secrets.APPLICATION_YML }}" > src/main/resources/application.yml
+          echo "${{ secrets.APPLICATION_YML }}" | base64 -d > src/main/resources/application.yml
 
       - name: Build with Gradle
         run: |
