@@ -30,8 +30,8 @@ com.capston.demo
 │   ├── ai
 │   │   ├── controller      MeetingAnalysisController
 │   │   ├── controllerDocs  MeetingAnalysisControllerDocs
-│   │   ├── dto             AssemblyAiTranscriptResult, GeminiAnalysisResult (internal)
-│   │   │                   GeminiAnalyzeResponse, TranscribeResponse (response)
+│   │   ├── dto             AssemblyAiTranscriptResult, GeminiAnalysisResult, GeminiCorrectionResult (internal)
+│   │   │                   GeminiAnalyzeResponse, MeetingAnalyzeResponse, TranscribeResponse (response)
 │   │   └── service         AssemblyAiService, GeminiAiService, MeetingAnalysisService
 │   ├── calender
 │   │   ├── controller      CalendarController, EventController, TaskController
@@ -48,11 +48,13 @@ com.capston.demo
 │   │   ├── controllerDocs  MeetingControllerDocs
 │   │   ├── dto/request     MeetingRequest, SpeakerMappingRequest, TranscriptRequest
 │   │   ├── dto/response    MeetingResponse, MeetingSummaryResponse, TranscriptResponse,
-│   │   │                   SpeakerMappingResponse
+│   │   │                   SpeakerMappingResponse, MeetingNotionExportResponse
+│   │   ├── dto/export      MeetingExportReportModel
 │   │   ├── entity          Meeting, MeetingRecording, MeetingTranscript(MongoDB), RecordingStatus
 │   │   ├── repository      MeetingRepository, MeetingRecordingRepository,
 │   │   │                   MeetingTranscriptMongoRepository
-│   │   └── service         MeetingService, MeetingTranscriptService
+│   │   └── service         MeetingService, MeetingTranscriptService,
+│   │                       MeetingExportService, NotionMeetingNotesService
 │   ├── recording
 │   │   ├── controller      RecordingController
 │   │   ├── controllerDocs  RecordingControllerDocs
@@ -68,7 +70,7 @@ com.capston.demo
 │       │                   Workspace, WorkspaceMember, WorkspaceMemberId
 │       ├── repository      UserRepository, RefreshTokenRepository, UserNotionAccountRepository
 │       │                   WorkspaceRepository, WorkspaceMemberRepository
-│       ├── dto/workspace   WorkspaceCreateRequest, WorkspaceInviteRequest,
+│       ├── dto/workspace   WorkspaceCreateRequest, WorkspaceUpdateRequest, WorkspaceInviteRequest,
 │       │                   WorkspaceResponse, WorkspaceMemberResponse
 │       └── service         AuthService, UserService, GoogleOAuth2Service, NotionOAuth2Service,
 │                           OAuthUserService, MyUserDetailsService, S3Service, WorkspaceService
@@ -108,12 +110,16 @@ com.capston.demo
 
 ### Workspace (MySQL) — user 패키지에 위치
 - `id`, `name`, `slug` (unique), `owner` (User FK), `createdAt`
+- `meetingCategory` (nullable) — 회의 도메인 분야 (예: 개발, 디자인, 마케팅). STT 문맥보정 시 Gemini 프롬프트에 전달
+- `meetingContext` (nullable) — 추가 문맥 설명 (예: "React, Spring Boot 사용 중인 협업 도구 프로젝트")
 - WorkspaceMember: `workspaceId + userId` 복합키, `role` (owner/admin/member), `joinedAt`
 
 ### MeetingTranscript (MongoDB Document)
 - `_id` (String), `meetingId` (Long, MySQL 참조), `recordingId` (Long)
-- `fullText`, `summary`, `keywords[]`, `analyzedAt`, `createdAt`
-- `segments[]` — `SegmentEmbedded` (speakerLabel, userId, content, startSec, endSec, sequence)
+- `originalFullText` (AssemblyAI 원문), `correctedFullText` (Gemini 교정본), `displayFullText` (교정 표시본)
+- `fullText` (= correctedFullText, 분석용), `summary`, `keywords[]`, `analyzedAt`, `createdAt`
+- `segments[]` — `SegmentEmbedded` (speakerLabel, originalContent, correctedContent, displayContent, corrections[], content, startSec, endSec, sequence)
+  - `corrections[]` — `CorrectionEmbedded` (original, corrected, reason)
 - `speakerMappings[]` — `SpeakerMappingEmbedded` (speakerLabel, userId, userName, slackUserId)
 
 ### Task (MySQL)
@@ -126,13 +132,29 @@ com.capston.demo
 - `id`, `title`, `description`, `location`, `startAt`, `endAt`, `isAllDay`
 - `workspaceId`, `createdBy`, `createdByName`, `meetingId`, `color`, `createdAt`
 - `participants[]` — EventParticipant (userId, status: PENDING/ACCEPTED/DECLINED)
-- **중요**: Gemini 생성 시 `createdBy` = meeting.createdBy, `workspaceId` = meeting.workspaceId 자동 설정
+- **중요**: Gemini AI 분석에서 Event 자동 추출 제거됨 — 수동 생성만 지원. Gemini는 Task만 추출
 
 ## 구현된 API 엔드포인트
 
-### 인증 (`/api/auth`, `/api/oauth2`)
+### 인증 (`/api/auth`)
 - `POST /api/auth/login`, `POST /api/auth/logout`, `POST /api/auth/refresh`
-- `POST /api/oauth2/google`, `POST /api/oauth2/notion`
+
+### Google OAuth (`/api/oauth2/google`)
+- `GET /api/oauth2/google/auth-url` — 인증 URL 반환
+- `GET /api/oauth2/google/callback` — 웹 리다이렉트 콜백
+- `POST /api/oauth2/google/callback` — 앱용 code 교환 → JWT 발급
+
+### Notion OAuth (`/api/oauth2/notion`)
+- `GET /api/oauth2/notion/auth-url` — 로그인용 인증 URL
+- `GET /api/oauth2/notion/callback`, `POST /api/oauth2/notion/callback` — 로그인 콜백
+- `GET /api/oauth2/notion/link/auth-url` — 기존 계정에 Notion 연동용 URL
+- `GET /api/oauth2/notion/link/callback` — 302 딥링크 리다이렉트 (`meetflow://notion/link?code=...`)
+- `POST /api/oauth2/notion/link` — 앱에서 code 받아 연동 완료 (JWT 필요)
+- `GET /api/oauth2/notion/status` — 연동·캘린더 설정 상태 조회 `{ linked, calendarConfigured, notionName, calendarName }`
+- `GET /api/oauth2/notion/calendar-targets` — 연동된 Notion DB 목록 조회 (캘린더 선택용)
+- `POST /api/oauth2/notion/calendar-targets` — Notion에 캘린더 DB 신규 생성 후 자동 등록
+- `PUT /api/oauth2/notion/calendar-database` — 기존 DB를 캘린더로 등록 (databaseId 또는 databaseUrl)
+- `PUT /api/oauth2/notion/meeting-notes-database` — 회의록 내보내기용 DB 등록
 
 ### 사용자 (`/api/user`)
 - `POST /api/user/register`, `GET /api/user/profile`
@@ -140,8 +162,9 @@ com.capston.demo
 - `DELETE /api/user/account`, `GET /api/user/presigned-url`
 
 ### 워크스페이스 (`/api/workspaces`)
-- `POST /api/workspaces` — 생성 (생성자 자동으로 owner 멤버 등록)
+- `POST /api/workspaces` — 생성 (생성자 자동으로 owner 멤버 등록, `meetingCategory`/`meetingContext` 선택 포함)
 - `GET /api/workspaces` — 내가 속한 워크스페이스 목록 (owner + member 모두)
+- `PATCH /api/workspaces/{id}` — 이름·카테고리·문맥 수정 (owner만 가능, 부분 업데이트)
 - `DELETE /api/workspaces/{id}` — 삭제 (owner만 가능, 멤버십도 함께 삭제)
 - `POST /api/workspaces/{id}/members` — 이메일로 멤버 초대
 - `GET /api/workspaces/{id}/members` — 멤버 목록 (화자 매핑 드롭다운용)
@@ -159,10 +182,15 @@ com.capston.demo
 - `GET /api/meetings/transcripts/{transcriptId}/speaker-mappings` — 화자 매핑 조회
 
 ### AI 분석 (`/api/meetings`)
-- `POST /api/meetings/{meetingId}/recordings/{recordingId}/transcribe` — STT 전사
+- `POST /api/meetings/{meetingId}/recordings/{recordingId}/transcribe` — STT 전사 + 문맥보정
+  - AssemblyAI STT → Gemini 문맥보정 (워크스페이스 카테고리/문맥 기반) → MongoDB 저장
+  - 응답: `originalFullText`, `correctedFullText`, `displayFullText`, `segments[]` (corrections 포함)
+  - 문맥보정 실패 시 원문 그대로 폴백 처리
 - `POST /api/meetings/transcripts/{transcriptId}/gemini-analyze` — Gemini AI 분석
-  - 재실행 시 기존 AI 생성 Task/Event 자동 삭제 후 재저장 (중복 방지)
+  - Task만 추출 (Event 자동 추출 없음)
+  - 재실행 시 기존 AI 생성 Task 자동 삭제 후 재저장 (중복 방지)
   - speakerLabel → userId 역조회로 task.assigneeId 자동 설정
+- `POST /api/meetings/{meetingId}/recordings/{recordingId}/analyze` — STT + 문맥보정 + Gemini 분석 통합 1단계 API
 
 ### 녹음 (`/api/recordings`)
 - `POST /api/recordings/upload?meetingId=` — 서버 경유 업로드
@@ -197,6 +225,15 @@ com.capston.demo
 - `POST /api/calendar/events/{eventId}/notion-sync` — 단일 이벤트 Notion 동기화
 - `POST /api/calendar/workspaces/{workspaceId}/notion-sync` — 워크스페이스 전체 Notion 동기화
 - `POST /api/calendar/events/notion-sync-batch` — 이벤트 ID 목록 일괄 동기화
+
+### 회의록 내보내기 (`/api/meetings`)
+- `GET /api/meetings/{meetingId}/export/pdf?includeEvents=` — 회의 리포트 PDF 다운로드
+  - Thymeleaf HTML 템플릿 → openhtmltopdf → PDF 변환 (맑은 고딕 한글 폰트)
+  - 내용: 요약, 키워드, 할일 목록, (includeEvents=true 시) 일정 목록
+  - Gemini 분석 완료(summary 존재) 후에만 가능
+- `POST /api/meetings/{meetingId}/export/notion?includeEvents=` — Notion 회의록 DB로 내보내기
+  - 이미 내보낸 회의면 동일 페이지 **갱신** (notionPageId 기억)
+  - 전제: Notion OAuth 연동 + `PUT /api/oauth2/notion/meeting-notes-database` 등록 필요
 
 ### Slack (`/slack`)
 - `POST /slack/events` — Slack 이벤트 수신 (file_shared 등)
@@ -234,38 +271,53 @@ com.capston.demo
 
 ```
 1. 로그인 후 워크스페이스 생성, 다른 사용자 초대
+   - meetingCategory (예: 개발, 디자인), meetingContext (기술스택 등) 설정 시 STT 문맥보정 품질 향상
+   - 이후 PATCH /api/workspaces/{id} 로 언제든 수정 가능 (owner만)
 
 2. 워크스페이스에서 녹음 파일 업로드
-   → STT 자동 변환 시작 (화자 자동 분리: SPEAKER_00, SPEAKER_01, ...)
+   → S3에 업로드 (Presigned URL 직접 또는 서버 경유)
 
-3. STT 완료 후 대화 내용 확인 + 화자 매핑
+3. STT 전사 + 문맥보정
+   POST /api/meetings/{meetingId}/recordings/{recordingId}/transcribe
+   → AssemblyAI STT (화자 자동 분리: SPEAKER_00, SPEAKER_01, ...)
+   → Gemini 문맥보정 (워크스페이스 카테고리/문맥 기반 도메인 용어 교정)
+   → 응답: originalFullText / correctedFullText / displayFullText (교정 표시본)
+
+4. STT 완료 후 대화 내용 확인 + 화자 매핑
    - GET /api/workspaces/{id}/members 로 멤버 목록 조회 → 드롭다운 선택
    - PUT speaker-mappings 시 반드시 userId + userName 함께 전송 (userId null 금지)
    - Slack 사용 시 채널 내 버튼 클릭 → Modal에서 Slack 멤버 선택
 
-4. 화자 매핑 완료 후 Gemini AI 분석 실행
-   - 트랜스크립트 segments에 speakerName이 적용된 상태로 조회 가능
-   - 요약, 키워드, 할일, 일정 자동 추출
+5. 화자 매핑 완료 후 Gemini AI 분석 실행
+   POST /api/meetings/transcripts/{transcriptId}/gemini-analyze
+   - 요약, 키워드, 할일(Task)만 자동 추출 (Event 자동 추출 없음)
    - speakerLabel → userId 역조회로 Task.assigneeId 자동 설정
-   - 재실행 시 기존 AI 생성 Task/Event 자동 삭제 후 재저장 (중복 없음)
+   - 재실행 시 기존 AI 생성 Task 자동 삭제 후 재저장 (중복 없음)
 
-5. 캘린더(인앱)에서 AI 추출 결과 검토 및 수정
-   A. AI 추출 할일/일정을 PATCH로 수정 (담당자, 마감일, 상태 등)
+6. 캘린더(인앱)에서 AI 추출 결과 검토 및 수정
+   A. AI 추출 할일을 PATCH로 수정 (담당자, 마감일, 상태 등)
    B. 불필요한 항목 DELETE
-   C. 누락된 항목 수동으로 POST 추가
+   C. 누락된 항목 수동으로 POST 추가 (Task 또는 Event 직접 생성)
 
-6. 워크스페이스 전체 할일 상태 현황 조회 (칸반 보드)
+7. 워크스페이스 전체 할일 상태 현황 조회 (칸반 보드)
    - GET /api/tasks/stats?workspaceId= 로 TODO/IN_PROGRESS/DONE 분포 확인
    - GET /api/meetings/{id}/summary 로 회의별 대시보드 확인
 
-7. 선택적으로 Notion 캘린더 연동
-   (인앱 캘린더 데이터를 Notion으로 내보내기)
+8. 회의록 내보내기 (선택)
+   A. PDF: GET /api/meetings/{id}/export/pdf → 요약·할일·일정 포함 PDF 다운로드
+   B. Notion: POST /api/meetings/{id}/export/notion → 연동된 Notion DB에 페이지 생성/갱신
+      - 전제: Notion OAuth 연동 (GET /api/oauth2/notion/link/auth-url 플로우)
+              + 회의록 DB 등록 (PUT /api/oauth2/notion/meeting-notes-database)
+
+9. 선택적으로 Notion 캘린더 연동
+   - Notion OAuth 연동 후 캘린더 DB 선택/생성 (GET·POST /api/oauth2/notion/calendar-targets)
+   - 인앱 Event를 Notion 캘린더로 동기화 (POST /api/calendar/.../notion-sync)
 ```
 
 ### 캘린더 원칙
 - 기본: 인앱 캘린더 (Tasks, Events)
+- Gemini AI 분석: Task만 자동 추출. Event는 수동 생성만 지원
 - 선택: Notion 연동 (원하는 경우에만 내보내기)
-- 할일은 AI 추출 또는 수동 등록 모두 지원
 - 팀 전체 조회: meetingId/workspaceId 기준 조회 시 createdBy 필터 없이 팀 전체 반환
 
 ---
@@ -279,8 +331,8 @@ com.capston.demo
   → Slack 유저 이메일로 DB User 조회/자동생성
   → Meeting 자동 생성 (createdBy = user.id, workspaceId = null)
   → S3 업로드
-  → AssemblyAI STT (화자분리 포함)
-  → Gemini AI 분석 (요약, 키워드, 할일, 이벤트 추출)
+  → AssemblyAI STT (화자분리 포함) + Gemini 문맥보정
+  → Gemini AI 분석 (요약, 키워드, 할일 추출 — Event 없음)
   → 결과를 업로더에게 DM으로 전송  ← 현재 여기까지
 ```
 
