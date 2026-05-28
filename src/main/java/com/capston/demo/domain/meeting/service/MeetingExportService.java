@@ -8,6 +8,8 @@ import com.capston.demo.domain.calender.repository.TaskRepository;
 import com.capston.demo.domain.meeting.dto.export.MeetingExportReportModel;
 import com.capston.demo.domain.meeting.dto.export.MeetingExportReportModel.EventRow;
 import com.capston.demo.domain.meeting.dto.export.MeetingExportReportModel.TaskRow;
+import com.capston.demo.domain.meeting.dto.export.MeetingTranscriptExportModel;
+import com.capston.demo.domain.meeting.dto.export.MeetingTranscriptExportModel.SegmentRow;
 import com.capston.demo.domain.meeting.dto.response.MeetingNotionExportResponse;
 import com.capston.demo.domain.meeting.entity.Meeting;
 import com.capston.demo.domain.meeting.entity.MeetingTranscript;
@@ -64,6 +66,7 @@ public class MeetingExportService {
     private static volatile File cachedFontFile;
     /** Thymeleaf 템플릿 경로 (확장자 제외) */
     private static final String TEMPLATE = "meeting-export/report";
+    private static final String TRANSCRIPT_TEMPLATE = "meeting-export/transcript";
     private static final DateTimeFormatter DATE_TIME_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
     private static final DateTimeFormatter DATE_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
     private static final List<TaskStatus> TASK_STATUS_ORDER = List.of(
@@ -92,8 +95,22 @@ public class MeetingExportService {
     @Transactional(readOnly = true)
     public ExportResult exportPdf(Long meetingId, Long userId, boolean includeEvents) {
         MeetingExportReportModel model = buildReportModel(meetingId, userId, includeEvents);
-        byte[] pdfBytes = renderPdf(model);
-        return new ExportResult(pdfBytes, buildFileName(model.getMeetingTitle()));
+        byte[] pdfBytes = renderPdf(TEMPLATE, "report", model);
+        return new ExportResult(pdfBytes, buildReportFileName(model.getMeetingTitle()));
+    }
+
+    /**
+     * 회의 대화록(전사 세그먼트)을 PDF로 변환한다.
+     *
+     * @param meetingId         회의 ID (MySQL meetings.id)
+     * @param userId            JWT 사용자 ID (접근 권한 검증용)
+     * @param includeTimestamps true: 발화 시각 표시 / false: 화자·내용만
+     */
+    @Transactional(readOnly = true)
+    public ExportResult exportTranscriptPdf(Long meetingId, Long userId, boolean includeTimestamps) {
+        MeetingTranscriptExportModel model = buildTranscriptModel(meetingId, userId, includeTimestamps);
+        byte[] pdfBytes = renderPdf(TRANSCRIPT_TEMPLATE, "transcript", model);
+        return new ExportResult(pdfBytes, buildTranscriptFileName(model.getMeetingTitle()));
     }
 
     /**
@@ -195,11 +212,65 @@ public class MeetingExportService {
         );
     }
 
+    /** 대화록 PDF — STT 세그먼트 조립 */
+    @Transactional(readOnly = true)
+    public MeetingTranscriptExportModel buildTranscriptModel(Long meetingId, Long userId, boolean includeTimestamps) {
+        Meeting meeting = meetingRepository.findById(meetingId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.MEETING_NOT_FOUND));
+        checkAccess(meeting, userId);
+
+        MeetingTranscript transcript = transcriptRepository
+                .findByMeetingIdOrderByCreatedAtDesc(meetingId)
+                .stream()
+                .findFirst()
+                .orElse(null);
+        if (transcript == null || transcript.getSegments() == null || transcript.getSegments().isEmpty()) {
+            throw new BusinessException(ErrorCode.TRANSCRIPT_EXPORT_NOT_READY);
+        }
+
+        String workspaceName = null;
+        if (meeting.getWorkspaceId() != null) {
+            workspaceName = workspaceRepository.findById(meeting.getWorkspaceId())
+                    .map(Workspace::getName)
+                    .orElse(null);
+        }
+
+        Map<String, String> labelToName = transcript.getSpeakerMappings().stream()
+                .filter(m -> StringUtils.hasText(m.getUserName()))
+                .collect(Collectors.toMap(
+                        MeetingTranscript.SpeakerMappingEmbedded::getSpeakerLabel,
+                        MeetingTranscript.SpeakerMappingEmbedded::getUserName,
+                        (a, b) -> a
+                ));
+
+        List<SegmentRow> segmentRows = transcript.getSegments().stream()
+                .sorted(Comparator.comparing(
+                        MeetingTranscript.SegmentEmbedded::getSequence,
+                        Comparator.nullsLast(Comparator.naturalOrder())))
+                .map(segment -> toSegmentRow(segment, labelToName, includeTimestamps))
+                .filter(row -> StringUtils.hasText(row.getContent()))
+                .toList();
+
+        if (segmentRows.isEmpty()) {
+            throw new BusinessException(ErrorCode.TRANSCRIPT_EXPORT_NOT_READY);
+        }
+
+        return new MeetingTranscriptExportModel(
+                workspaceName,
+                meeting.getTitle(),
+                formatDateTime(meeting.getCreatedAt()),
+                formatDateTime(transcript.getCreatedAt()),
+                includeTimestamps,
+                segmentRows,
+                LocalDateTime.now().format(DATE_TIME_FMT)
+        );
+    }
+
     /** Thymeleaf HTML → openhtmltopdf → PDF byte[] */
-    private byte[] renderPdf(MeetingExportReportModel model) {
-        Context context = new Context(); // 회의 리포트 모델 컨텍스트
-        context.setVariable("report", model); // 회의 리포트 모델 변수
-        String html = templateEngine.process(TEMPLATE, context); // 회의 리포트 HTML 생성
+    private byte[] renderPdf(String template, String variableName, Object model) {
+        Context context = new Context();
+        context.setVariable(variableName, model);
+        String html = templateEngine.process(template, context);
 
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             PdfRendererBuilder builder = new PdfRendererBuilder(); // PDF 렌더러 빌더
@@ -316,11 +387,68 @@ public class MeetingExportService {
         return trimmed.substring(0, maxLen) + "…";
     }
 
-    private String buildFileName(String meetingTitle) {
+    private String buildReportFileName(String meetingTitle) {
         String safeTitle = (StringUtils.hasText(meetingTitle) ? meetingTitle : "meeting")
                 .replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
         String date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
         return safeTitle + "_meeting_report_" + date + ".pdf";
+    }
+
+    private String buildTranscriptFileName(String meetingTitle) {
+        String safeTitle = (StringUtils.hasText(meetingTitle) ? meetingTitle : "meeting")
+                .replaceAll("[\\\\/:*?\"<>|\\s]+", "_");
+        String date = LocalDate.now().format(DateTimeFormatter.BASIC_ISO_DATE);
+        return safeTitle + "_transcript_" + date + ".pdf";
+    }
+
+    private SegmentRow toSegmentRow(MeetingTranscript.SegmentEmbedded segment,
+                                    Map<String, String> labelToName,
+                                    boolean includeTimestamps) {
+        String speakerName = labelToName.getOrDefault(
+                segment.getSpeakerLabel(),
+                StringUtils.hasText(segment.getSpeakerLabel()) ? segment.getSpeakerLabel() : "화자");
+        String timestamp = includeTimestamps ? formatTimestampRange(segment.getStartSec(), segment.getEndSec()) : null;
+        return new SegmentRow(speakerName, timestamp, resolveSegmentContent(segment));
+    }
+
+    private String resolveSegmentContent(MeetingTranscript.SegmentEmbedded segment) {
+        if (StringUtils.hasText(segment.getDisplayContent())) {
+            return segment.getDisplayContent().trim();
+        }
+        if (StringUtils.hasText(segment.getContent())) {
+            return segment.getContent().trim();
+        }
+        if (StringUtils.hasText(segment.getCorrectedContent())) {
+            return segment.getCorrectedContent().trim();
+        }
+        if (StringUtils.hasText(segment.getOriginalContent())) {
+            return segment.getOriginalContent().trim();
+        }
+        return "";
+    }
+
+    private String formatTimestampRange(Float startSec, Float endSec) {
+        if (startSec == null && endSec == null) {
+            return null;
+        }
+        if (startSec != null && endSec != null) {
+            return formatSeconds(startSec) + " ~ " + formatSeconds(endSec);
+        }
+        return formatSeconds(startSec != null ? startSec : endSec);
+    }
+
+    private String formatSeconds(Float sec) {
+        if (sec == null) {
+            return "-";
+        }
+        int total = Math.max(0, sec.intValue());
+        int hours = total / 3600;
+        int minutes = (total % 3600) / 60;
+        int seconds = total % 60;
+        if (hours > 0) {
+            return String.format("%d:%02d:%02d", hours, minutes, seconds);
+        }
+        return String.format("%02d:%02d", minutes, seconds);
     }
 
     /** MeetingService 와 동일: workspace 멤버 또는 Slack 회의(createdBy) 본인 */

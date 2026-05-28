@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<!-- 대화록 PDF 템플릿 (MeetingExportService.TRANSCRIPT_TEMPLATE) — 변수: transcript -->
+<html xmlns:th="http://www.thymeleaf.org" lang="ko">
+<head>
+    <meta charset="UTF-8"/>
+    <style>
+        @page {
+            size: A4;
+            margin: 18mm 16mm 20mm 16mm;
+        }
+        * {
+            box-sizing: border-box;
+            font-family: 'MalgunGothic';
+        }
+        body {
+            font-size: 10.5pt;
+            color: #1a1a1a;
+            line-height: 1.55;
+            margin: 0;
+        }
+        .workspace-label {
+            font-size: 9pt;
+            color: #888;
+            margin: 0 0 6px 0;
+        }
+        h1 {
+            font-size: 20pt;
+            font-weight: 700;
+            margin: 0 0 10px 0;
+            color: #111;
+            line-height: 1.25;
+        }
+        .meta {
+            font-size: 9pt;
+            color: #666;
+            margin: 0 0 4px 0;
+        }
+        .meta span + span::before {
+            content: " · ";
+            color: #aaa;
+        }
+        h2 {
+            font-size: 12pt;
+            font-weight: 700;
+            margin: 22px 0 0 0;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #ddd;
+            color: #222;
+        }
+        .segment-list {
+            margin-top: 14px;
+        }
+        .segment-card {
+            background: #f5f6f8;
+            border-radius: 6px;
+            padding: 12px 14px;
+            margin-bottom: 10px;
+            page-break-inside: avoid;
+        }
+        .segment-header {
+            margin: 0 0 6px 0;
+            font-size: 9.5pt;
+            line-height: 1.4;
+        }
+        .speaker-name {
+            font-weight: 700;
+            color: #333;
+        }
+        .timestamp {
+            font-weight: 400;
+            color: #888;
+            margin-left: 8px;
+        }
+        .segment-content {
+            margin: 0;
+            white-space: pre-wrap;
+            font-size: 10pt;
+            color: #1a1a1a;
+            line-height: 1.6;
+        }
+        .empty {
+            color: #888;
+            font-size: 9.5pt;
+            margin-top: 12px;
+        }
+        .footer {
+            margin-top: 28px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+            font-size: 8.5pt;
+            color: #888;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+<div th:object="${transcript}">
+    <p class="workspace-label" th:if="*{workspaceName != null}" th:text="*{workspaceName}">워크스페이스</p>
+    <h1 th:text="*{meetingTitle}">회의 제목</h1>
+    <p class="meta">
+        <span th:text="'회의 생성: ' + *{meetingCreatedAt}">회의 생성</span>
+        <span th:if="*{transcribedAt != null and transcribedAt != '-'}"
+              th:text="'전사 완료: ' + *{transcribedAt}">전사 완료</span>
+    </p>
+    <p class="meta" th:if="*{segments != null and !segments.isEmpty()}">
+        <span th:text="'발화 ' + *{segments.size()} + '건'">발화 21건</span>
+        <span th:text="*{includeTimestamps} ? '타임스탬프 포함' : '타임스탬프 미포함'">타임스탬프 포함</span>
+    </p>
+
+    <h2>대화록</h2>
+
+    <div class="segment-list" th:if="*{segments != null and !segments.isEmpty()}">
+        <div class="segment-card" th:each="seg : *{segments}">
+            <p class="segment-header">
+                <span class="speaker-name" th:text="${seg.speakerName}">화자</span>
+                <span class="timestamp"
+                      th:if="${seg.timestamp != null and !seg.timestamp.isEmpty()}"
+                      th:text="${seg.timestamp}">00:02 ~ 00:07</span>
+            </p>
+            <p class="segment-content" th:text="${seg.content}">발화 내용</p>
+        </div>
+    </div>
+
+    <p class="empty" th:if="*{segments == null or segments.isEmpty()}">전사된 대화 내용이 없습니다.</p>
+
+    <p class="footer" th:text="'MeetingApp · PDF 생성: ' + *{exportedAt}">푸터</p>
+</div>
+</body>
+</html>

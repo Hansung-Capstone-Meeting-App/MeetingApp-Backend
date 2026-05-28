@@ -1,6 +1,6 @@
 package com.capston.demo.domain.user.controller;
 
-
+import com.capston.demo.domain.user.controllerDocs.OAuth2ControllerDocs;
 import com.capston.demo.domain.user.dto.OAuthUserInfo;
 import com.capston.demo.domain.user.dto.request.CreateNotionCalendarDatabaseRequestDto;
 import com.capston.demo.domain.user.dto.request.SetCalendarDatabaseRequestDto;
@@ -11,9 +11,13 @@ import com.capston.demo.domain.user.dto.response.NotionStatusResponse;
 import com.capston.demo.domain.user.entity.UserNotionAccount;
 import com.capston.demo.domain.user.entity.User;
 import com.capston.demo.domain.user.oauth.NotionOAuthFlow;
+import com.capston.demo.domain.user.oauth.OAuthClientType;
 import com.capston.demo.global.security.CustomUserDetails;
+import com.capston.demo.domain.calender.repository.EventRepository;
 import com.capston.demo.domain.calender.service.NotionCalendarService;
+import com.capston.demo.domain.user.entity.Workspace;
 import com.capston.demo.domain.user.repository.UserNotionAccountRepository;
+import com.capston.demo.domain.user.repository.WorkspaceRepository;
 import com.capston.demo.domain.user.service.AuthService;
 import com.capston.demo.domain.user.service.GoogleOAuth2Service;
 import com.capston.demo.domain.user.service.NotionOAuth2Service;
@@ -22,12 +26,14 @@ import com.capston.demo.domain.user.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.net.URI;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -36,7 +42,7 @@ import java.util.Map;
 @RequestMapping("/api/oauth2")
 @RequiredArgsConstructor
 @Slf4j
-public class OAuth2Controller {
+public class OAuth2Controller implements OAuth2ControllerDocs {
 
     // 각 OAuth 제공자별 액세스 토큰/유저 정보 처리 서비스
     private final GoogleOAuth2Service googleOAuth2Service;
@@ -51,56 +57,100 @@ public class OAuth2Controller {
     private final UserRepository userRepository;
     // Notion 캘린더 DB 검색·일정 생성
     private final NotionCalendarService notionCalendarService;
+    private final WorkspaceRepository workspaceRepository;
+    private final EventRepository eventRepository;
 
     /**
-     * Google 인증 URL 반환 (모바일 앱용)
+     * Google 인증 URL 반환
      *
-     * @return Google OAuth 인증 URL
+     * @param client web(기본) | mobile — redirect_uri 및 auth-url 분기
      */
     @GetMapping("/google/auth-url")
-    public ResponseEntity<Map<String, String>> getGoogleAuthUrl() {
-        // 프론트/앱이 리다이렉트할 Google 로그인 URL 생성
-        String authUrl = googleOAuth2Service.getGoogleAuthorizationUrl();
-        return ResponseEntity.ok(Map.of("authUrl", authUrl));
+    public ResponseEntity<Map<String, String>> getGoogleAuthUrl(
+            @RequestParam(name = "client", defaultValue = "web") String client) {
+        OAuthClientType clientType = OAuthClientType.from(client);
+        return ResponseEntity.ok(oauthAuthUrlResponse(
+                googleOAuth2Service.getGoogleAuthorizationUrl(clientType),
+                googleOAuth2Service.resolveRedirectUri(clientType),
+                clientType
+        ));
     }
 
     /**
-     * Notion 인증 URL 반환 (모바일 앱용)
+     * Notion 인증 URL 반환 (로그인)
      *
-     * @return Notion OAuth 인증 URL
+     * @param client web(기본) | mobile
      */
     @GetMapping("/notion/auth-url")
-    public ResponseEntity<Map<String, String>> getNotionAuthUrl() {
-        // auth-url · code 교환 · Notion 콘솔 redirect URI 가 동일한 값 (LOGIN)
-        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LOGIN));
+    public ResponseEntity<Map<String, String>> getNotionAuthUrl(
+            @RequestParam(name = "client", defaultValue = "web") String client) {
+        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LOGIN, OAuthClientType.from(client)));
     }
 
     /**
-     * 로그인한 사용자의 Notion 연동용 인증 URL (모바일 앱용)
-     * redirect_uri는 application.yml의 link-redirect-uri 와 동일해야 함
+     * 로그인한 사용자의 Notion 연동용 인증 URL
      *
-     * @return Notion OAuth 인증 URL
+     * @param client web(기본) | mobile
      */
     @GetMapping("/notion/link/auth-url")
-    public ResponseEntity<Map<String, String>> getNotionLinkAuthUrl() {
-        // auth-url · code 교환 · Notion 콘솔 redirect URI 가 동일한 값 (LINK)
-        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LINK));
+    public ResponseEntity<Map<String, String>> getNotionLinkAuthUrl(
+            @RequestParam(name = "client", defaultValue = "web") String client) {
+        return ResponseEntity.ok(notionAuthUrlResponse(NotionOAuthFlow.LINK, OAuthClientType.from(client)));
     }
 
     /**
-     * Notion 연동 OAuth 브라우저 콜백 (GET)
-     * JSON/JWT 반환 없이 302로 앱 딥링크에 code 또는 error 전달.
-     * 토큰 교환·DB 저장은 앱이 POST /notion/link 로 수행.
+     * Notion 연동 OAuth 웹 콜백 (GET, Swagger용) — code JSON 반환.
+     * 연동 저장은 POST /notion/link (JWT + client=web).
      */
     @GetMapping("/notion/link/callback")
-    public ResponseEntity<Void> notionLinkCallback(
+    public ResponseEntity<Map<String, String>> notionLinkCallbackWeb(
             @RequestParam(required = false) String code,
             @RequestParam(required = false) String error) {
-        // meetflow://notion/link?code=... 또는 ?error=...
-        String deepLink = notionOAuth2Service.buildLinkDeepLinkRedirect(code, error);
-        return ResponseEntity.status(HttpStatus.FOUND)
-                .location(URI.create(deepLink))
-                .build();
+        log.info("Notion LINK web callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        if (error != null && !error.isBlank()) {
+            return ResponseEntity.badRequest().body(Map.of("error", error, "client", "web"));
+        }
+        if (code == null || code.isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        return ResponseEntity.ok(notionOAuth2Service.buildLinkWebCallbackResponse(code));
+    }
+
+    /**
+     * Notion 연동 OAuth 모바일 콜백 (GET) — HTML 브릿지 → meetflow://notion/link
+     */
+    @GetMapping(value = "/notion/link/callback/mobile", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> notionLinkCallbackMobile(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String error) {
+        log.info("Notion LINK mobile callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        return ResponseEntity.ok(notionOAuth2Service.buildLinkMobileCallbackBridgeHtml(code, error));
+    }
+
+    /**
+     * Google OAuth 모바일 콜백 (GET) — HTML 브릿지 → meetflow://oauth/google
+     */
+    @GetMapping(value = "/google/callback/mobile", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> googleCallbackMobile(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String error) {
+        log.info("Google mobile callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        return ResponseEntity.ok(googleOAuth2Service.buildMobileCallbackBridgeHtml(code, error));
+    }
+
+    /**
+     * Notion OAuth 모바일 콜백 (GET, 로그인) — HTML 브릿지 → meetflow://oauth/notion
+     */
+    @GetMapping(value = "/notion/callback/mobile", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> notionCallbackMobile(
+            @RequestParam(required = false) String code,
+            @RequestParam(required = false) String error) {
+        log.info("Notion LOGIN mobile callback received. hasCode={}, error={}",
+                code != null && !code.isBlank(), error);
+        return ResponseEntity.ok(notionOAuth2Service.buildLoginMobileCallbackBridgeHtml(code, error));
     }
 
     /**
@@ -116,12 +166,11 @@ public class OAuth2Controller {
             String code = request.getCode();
 
             if (code == null || code.isEmpty()) {
-                // 클라이언트가 인증 코드를 주지 않은 경우
                 return ResponseEntity.badRequest().build();
             }
 
-            // 1. 인증 코드를 액세스 토큰으로 교환
-            String accessToken = googleOAuth2Service.exchangeCodeForToken(code);
+            OAuthClientType clientType = OAuthClientType.from(request.getClient(), OAuthClientType.MOBILE);
+            String accessToken = googleOAuth2Service.exchangeCodeForToken(code, clientType);
 
             // 2. 액세스 토큰으로 사용자 정보 조회
             OAuthUserInfo userInfo = googleOAuth2Service.getUserInfo(accessToken);
@@ -152,12 +201,12 @@ public class OAuth2Controller {
             String code = request.getCode(); //인증 코드
 
             if (code == null || code.isEmpty()) {
-                // 클라이언트가 인증 코드를 주지 않은 경우
-                return ResponseEntity.badRequest().build(); //400 Bad Request 반환
+                return ResponseEntity.badRequest().build();
             }
 
-            String accessToken = notionOAuth2Service.exchangeCodeForToken(code); //인증 코드를 엑세스 토큰으로 교환
-            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken); //엑세스 토큰으로 사용자 정보 조회
+            OAuthClientType clientType = OAuthClientType.from(request.getClient(), OAuthClientType.MOBILE);
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LOGIN, clientType);
+            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
             User user = oAuthUserService.processOAuthUser(userInfo); //사용자 정보를 처리하여 User 엔티티로 변환 및 저장
             // 노션으로 로그인 시 해당 유저에 Notion 연동 정보 자동 저장 (캘린더 동기화 등 사용)
             notionOAuth2Service.linkNotionAccount(user, userInfo, accessToken, userNotionAccountRepository); //Notion 계정 연동 정보 저장
@@ -182,7 +231,7 @@ public class OAuth2Controller {
             return ResponseEntity.badRequest().build();
         }
         try {
-            String accessToken = googleOAuth2Service.exchangeCodeForToken(code);
+            String accessToken = googleOAuth2Service.exchangeCodeForToken(code, OAuthClientType.WEB);
             OAuthUserInfo userInfo = googleOAuth2Service.getUserInfo(accessToken);
             User user = oAuthUserService.processOAuthUser(userInfo);
             return ResponseEntity.ok(authService.oauthLogin(user));
@@ -204,7 +253,7 @@ public class OAuth2Controller {
             return ResponseEntity.badRequest().build();
         }
         try {
-            String accessToken = notionOAuth2Service.exchangeCodeForToken(code);
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LOGIN, OAuthClientType.WEB);
             OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
             User user = oAuthUserService.processOAuthUser(userInfo);
             // 노션으로 로그인 시 해당 유저에 Notion 연동 정보 자동 저장 (캘린더 동기화 등 사용)
@@ -234,9 +283,9 @@ public class OAuth2Controller {
         }
 
         try {
-            // LINK 플로우: auth-url 과 동일한 redirect_uri 로 code 교환
-            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LINK);
-            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken); //엑세스 토큰으로 사용자 정보 조회
+            OAuthClientType clientType = OAuthClientType.from(request.getClient(), OAuthClientType.MOBILE);
+            String accessToken = notionOAuth2Service.exchangeCodeForToken(code, NotionOAuthFlow.LINK, clientType);
+            OAuthUserInfo userInfo = notionOAuth2Service.getUserInfo(accessToken);
 
             // 현재 로그인한 사용자 정보에서 userId 조회
             CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
@@ -256,7 +305,7 @@ public class OAuth2Controller {
     }
 
     /**
-     * Notion 연동·캘린더 설정 상태 조회 (설정 화면용).
+     * Notion 연동·캘린더·회의록 DB 설정 상태 조회 (설정 화면용).
      * 미연동이어도 200 + linked=false 반환.
      */
     @GetMapping("/notion/status")
@@ -288,7 +337,7 @@ public class OAuth2Controller {
         Long userId = userDetails.getUserId();
 
         return userNotionAccountRepository.findByUser_Id(userId)
-                .map(account -> {
+                .<ResponseEntity<?>>map(account -> {
                     List<NotionCalendarTargetResponse> targets =
                             notionCalendarService.searchCalendarTargets(account.getAccessToken());
                     return ResponseEntity.ok(targets);
@@ -337,6 +386,7 @@ public class OAuth2Controller {
      * databaseUrl(노션 DB 페이지 URL) 또는 databaseId를 보내면, 해당 유저의 Notion 연동 정보에 저장된다.
      */
     @PutMapping("/notion/calendar-database")
+    @Transactional
     public ResponseEntity<?> setCalendarDatabase(@RequestBody SetCalendarDatabaseRequestDto request) { //캘린더 동기화에 사용할 노션 데이터베이스를 등록
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
@@ -353,11 +403,64 @@ public class OAuth2Controller {
 
         return userNotionAccountRepository.findByUser_Id(userId)
                 .map(account -> {
+                    String previousDatabaseId = account.getCalendarDatabaseId();
+                    boolean databaseChanged = previousDatabaseId != null
+                            && !normalizeNotionId(previousDatabaseId).equals(normalizeNotionId(databaseId));
+                    boolean shouldResetLinks = Boolean.TRUE.equals(request.getResetExistingEventLinks())
+                            || databaseChanged;
+
+                    int resetCount = 0;
+                    if (shouldResetLinks) {
+                        resetCount = clearNotionLinksForUserWorkspaces(userId);
+                    }
+
                     account.setCalendarDatabaseId(databaseId);
                     userNotionAccountRepository.save(account);
-                    return ResponseEntity.ok().body(Map.of(
-                            "message", "캘린더 데이터베이스가 등록되었습니다.",
-                            "calendarDatabaseId", databaseId
+
+                    Map<String, Object> body = new HashMap<>();
+                    body.put("message", "캘린더 데이터베이스가 등록되었습니다.");
+                    body.put("calendarDatabaseId", databaseId);
+                    body.put("eventLinksReset", shouldResetLinks);
+                    body.put("resetEventCount", resetCount);
+                    if (databaseChanged) {
+                        body.put("previousCalendarDatabaseId", previousDatabaseId);
+                    }
+                    return ResponseEntity.ok().body(body);
+                })
+                .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
+    }
+
+    /**
+     * Notion에 회의록 export용 database를 새로 생성하고, 해당 유저의 연동 정보에 자동 등록한다.
+     * parentPageId 없으면 연동 워크스페이스의 첫 페이지 아래에 생성한다.
+     */
+    @PostMapping("/notion/meeting-notes-targets")
+    public ResponseEntity<?> createNotionMeetingNotesTarget(
+            @RequestBody(required = false) CreateNotionCalendarDatabaseRequestDto request) {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || !(authentication.getPrincipal() instanceof CustomUserDetails)) {
+            return ResponseEntity.status(401).body(Map.of("error", "Authentication required"));
+        }
+
+        CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+        Long userId = userDetails.getUserId();
+
+        String name = request != null ? request.getName() : null;
+        String parentPageId = request != null ? request.getParentPageId() : null;
+
+        return userNotionAccountRepository.findByUser_Id(userId)
+                .map(account -> {
+                    NotionCalendarTargetResponse created = notionCalendarService.createMeetingNotesDatabase(
+                            account.getAccessToken(), name, parentPageId);
+                    account.setMeetingNotesDatabaseId(created.getId());
+                    userNotionAccountRepository.save(account);
+                    return ResponseEntity.status(HttpStatus.CREATED).body(Map.of(
+                            "id", created.getId(),
+                            "name", created.getName(),
+                            "type", created.getType(),
+                            "url", created.getUrl() != null ? created.getUrl() : "",
+                            "message", "회의록 데이터베이스가 생성·등록되었습니다.",
+                            "meetingNotesConfigured", true
                     ));
                 })
                 .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
@@ -393,29 +496,65 @@ public class OAuth2Controller {
                 .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
     }
 
-    private NotionStatusResponse buildNotionStatus(UserNotionAccount account) {
-        String databaseId = account.getCalendarDatabaseId();
-        boolean calendarConfigured = databaseId != null && !databaseId.isBlank();
+    private NotionStatusResponse buildNotionStatus(UserNotionAccount account) { //Notion 상태 응답 생성
+        String calendarDatabaseId = account.getCalendarDatabaseId(); //캘린더 데이터베이스 ID 추출
+        boolean calendarConfigured = calendarDatabaseId != null && !calendarDatabaseId.isBlank(); //캘린더 데이터베이스 설정 여부 확인
         String calendarName = null;
         if (calendarConfigured) {
-            calendarName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), databaseId);
+            calendarName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), calendarDatabaseId); //캘린더 데이터베이스 이름 추출
         }
-        return new NotionStatusResponse(
-                true,
-                calendarConfigured,
-                account.getNotionName(),
-                calendarName
-        );
+
+        String meetingNotesDatabaseId = account.getMeetingNotesDatabaseId(); //회의록 데이터베이스 ID 추출
+        boolean meetingNotesConfigured = meetingNotesDatabaseId != null && !meetingNotesDatabaseId.isBlank(); //회의록 데이터베이스 설정 여부 확인
+        String meetingNotesName = null;
+        if (meetingNotesConfigured) {
+            meetingNotesName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), meetingNotesDatabaseId); //회의록 데이터베이스 이름 추출
+        }
+
+        return new NotionStatusResponse( //Notion 상태 응답 생성
+                true, //연동 여부 설정
+                calendarConfigured, //캘린더 데이터베이스 설정 여부 설정
+                account.getNotionName(), //Notion 이름 설정
+                calendarName, //캘린더 데이터베이스 이름 설정
+                meetingNotesConfigured, //회의록 데이터베이스 설정 여부 설정
+                meetingNotesName //회의록 데이터베이스 이름 설정
+        ); //Notion 상태 응답 생성
     }
 
     /**
      * Notion auth-url 응답 — redirectUri 를 함께 내려 Notion Integration 등록 URI 와 대조 가능
      */
-    private Map<String, String> notionAuthUrlResponse(NotionOAuthFlow flow) {
+    private Map<String, String> oauthAuthUrlResponse(String authUrl, String redirectUri, OAuthClientType clientType) {
         return Map.of(
-                "authUrl", notionOAuth2Service.getAuthorizationUrl(flow),
-                "redirectUri", notionOAuth2Service.resolveRedirectUri(flow)
+                "authUrl", authUrl,
+                "redirectUri", redirectUri,
+                "client", clientType.name().toLowerCase()
         );
+    }
+
+    private Map<String, String> notionAuthUrlResponse(NotionOAuthFlow flow, OAuthClientType clientType) {
+        return Map.of(
+                "authUrl", notionOAuth2Service.getAuthorizationUrl(flow, clientType),
+                "redirectUri", notionOAuth2Service.resolveRedirectUri(flow, clientType),
+                "client", clientType.name().toLowerCase()
+        );
+    }
+
+    private int clearNotionLinksForUserWorkspaces(Long userId) {
+        List<Long> workspaceIds = workspaceRepository.findAllByMemberId(userId).stream()
+                .map(Workspace::getId)
+                .toList();
+        if (workspaceIds.isEmpty()) {
+            return 0;
+        }
+        return eventRepository.clearNotionLinksByWorkspaceIds(workspaceIds);
+    }
+
+    private static String normalizeNotionId(String id) {
+        if (id == null) {
+            return "";
+        }
+        return id.replace("-", "").trim().toLowerCase();
     }
 
     /** databaseId가 있으면 그대로, 없으면 databaseUrl에서 마지막 path 세그먼트로 ID 추출 */
