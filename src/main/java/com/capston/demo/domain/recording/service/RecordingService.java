@@ -14,15 +14,22 @@ import com.capston.demo.global.exception.BusinessException;
 import com.capston.demo.global.exception.ErrorCode;
 import com.capston.demo.global.util.S3Util;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 import org.springframework.web.multipart.MultipartFile;
+import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.HeadBucketRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
@@ -30,17 +37,21 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedPutObjectRequ
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.io.IOException;
+import java.net.URI;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RecordingService {
 
     private final S3Client s3Client;
     private final S3Presigner s3Presigner;
+    private final AwsCredentialsProvider awsCredentialsProvider;
     private final S3Util s3Util;
     private final MeetingRepository meetingRepository;
     private final MeetingRecordingRepository recordingRepository;
@@ -48,6 +59,12 @@ public class RecordingService {
 
     @Value("${cloud.aws.s3.bucket}")
     private String bucket;
+
+    @Value("${cloud.aws.region.static}")
+    private String defaultRegion;
+
+    @Value("${cloud.aws.s3.endpoint:}")
+    private String endpoint;
 
     private static final Duration PRESIGNED_EXPIRY = Duration.ofHours(1);
 
@@ -63,15 +80,20 @@ public class RecordingService {
 
         String s3Key = s3Util.generateKey(meetingId, file.getOriginalFilename());
 
-        s3Client.putObject(
-                PutObjectRequest.builder()
-                        .bucket(bucket)
-                        .key(s3Key)
-                        .contentType(file.getContentType())
-                        .contentLength(file.getSize())
-                        .build(),
-                RequestBody.fromInputStream(file.getInputStream(), file.getSize())
-        );
+        S3Client client = resolveClientForBucket(bucket);
+        try {
+            client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(s3Key)
+                            .contentType(file.getContentType())
+                            .contentLength(file.getSize())
+                            .build(),
+                    RequestBody.fromInputStream(file.getInputStream(), file.getSize())
+            );
+        } finally {
+            closeIfRegional(client);
+        }
 
         MeetingRecording recording = new MeetingRecording();
         recording.setMeeting(meeting);
@@ -93,14 +115,19 @@ public class RecordingService {
 
         String s3Key = s3Util.generateKey(meetingId, filename);
 
-        s3Client.putObject(
-                PutObjectRequest.builder()
-                        .bucket(bucket)
-                        .key(s3Key)
-                        .contentLength(fileSize)
-                        .build(),
-                RequestBody.fromInputStream(inputStream, fileSize)
-        );
+        S3Client client = resolveClientForBucket(bucket);
+        try {
+            client.putObject(
+                    PutObjectRequest.builder()
+                            .bucket(bucket)
+                            .key(s3Key)
+                            .contentLength(fileSize)
+                            .build(),
+                    RequestBody.fromInputStream(inputStream, fileSize)
+            );
+        } finally {
+            closeIfRegional(client);
+        }
 
         MeetingRecording recording = new MeetingRecording();
         recording.setMeeting(meeting);
@@ -153,15 +180,21 @@ public class RecordingService {
 
         String s3Key = s3Util.generateKey(request.getMeetingId(), request.getFilename());
 
-        PresignedPutObjectRequest presigned = s3Presigner.presignPutObject(
-                PutObjectPresignRequest.builder()
-                        .signatureDuration(PRESIGNED_EXPIRY)
-                        .putObjectRequest(PutObjectRequest.builder()
-                                .bucket(bucket)
-                                .key(s3Key)
-                                .build())
-                        .build()
-        );
+        PutObjectPresignRequest presignRequest = PutObjectPresignRequest.builder()
+                .signatureDuration(PRESIGNED_EXPIRY)
+                .putObjectRequest(PutObjectRequest.builder()
+                        .bucket(bucket)
+                        .key(s3Key)
+                        .build())
+                .build();
+
+        PresignedPutObjectRequest presigned;
+        S3Presigner presigner = resolvePresignerForBucket(bucket);
+        try {
+            presigned = presigner.presignPutObject(presignRequest);
+        } finally {
+            closeIfRegional(presigner);
+        }
 
         return new PresignedUrlResponse(presigned.url().toString(), s3Key, LocalDateTime.now().plusHours(1));
     }
@@ -174,15 +207,21 @@ public class RecordingService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.RECORDING_NOT_FOUND));
         checkAccess(recording.getMeeting(), userId);
 
-        PresignedGetObjectRequest presigned = s3Presigner.presignGetObject(
-                GetObjectPresignRequest.builder()
-                        .signatureDuration(PRESIGNED_EXPIRY)
-                        .getObjectRequest(GetObjectRequest.builder()
-                                .bucket(recording.getS3Bucket())
-                                .key(recording.getS3Key())
-                                .build())
-                        .build()
-        );
+        GetObjectPresignRequest presignRequest = GetObjectPresignRequest.builder()
+                .signatureDuration(PRESIGNED_EXPIRY)
+                .getObjectRequest(GetObjectRequest.builder()
+                        .bucket(recording.getS3Bucket())
+                        .key(recording.getS3Key())
+                        .build())
+                .build();
+
+        PresignedGetObjectRequest presigned;
+        S3Presigner presigner = resolvePresignerForBucket(recording.getS3Bucket());
+        try {
+            presigned = presigner.presignGetObject(presignRequest);
+        } finally {
+            closeIfRegional(presigner);
+        }
 
         return new PresignedUrlResponse(presigned.url().toString(), recording.getS3Key(), LocalDateTime.now().plusHours(1));
     }
@@ -213,6 +252,85 @@ public class RecordingService {
             if (!userId.equals(meeting.getCreatedBy())) {
                 throw new BusinessException(ErrorCode.MEETING_ACCESS_DENIED);
             }
+        }
+    }
+
+    private S3Client resolveClientForBucket(String bucketName) {
+        String region = resolveBucketRegion(bucketName);
+        if (!StringUtils.hasText(region) || region.equals(defaultRegion)) {
+            return s3Client;
+        }
+        log.warn("Using bucket region {} instead of configured region {}", region, defaultRegion);
+        return buildRegionalClient(region);
+    }
+
+    private S3Presigner resolvePresignerForBucket(String bucketName) {
+        String region = resolveBucketRegion(bucketName);
+        if (!StringUtils.hasText(region) || region.equals(defaultRegion)) {
+            return s3Presigner;
+        }
+        log.warn("Using bucket region {} instead of configured region {} for presign", region, defaultRegion);
+        return buildRegionalPresigner(region);
+    }
+
+    private String resolveBucketRegion(String bucketName) {
+        try {
+            s3Client.headBucket(HeadBucketRequest.builder().bucket(bucketName).build());
+            return defaultRegion;
+        } catch (S3Exception e) {
+            String bucketRegion = extractBucketRegion(e);
+            if (StringUtils.hasText(bucketRegion)) {
+                return bucketRegion;
+            }
+            throw e;
+        }
+    }
+
+    private String extractBucketRegion(S3Exception e) {
+        return Optional.ofNullable(e.awsErrorDetails())
+                .flatMap(details -> details.sdkHttpResponse().firstMatchingHeader("x-amz-bucket-region"))
+                .orElse(null);
+    }
+
+    private S3Client buildRegionalClient(String region) {
+        var builder = S3Client.builder()
+                .region(Region.of(region))
+                .credentialsProvider(awsCredentialsProvider)
+                .serviceConfiguration(S3Configuration.builder()
+                        .pathStyleAccessEnabled(false)
+                        .build());
+        if (StringUtils.hasText(endpoint)) {
+            builder.endpointOverride(URI.create(buildRegionalEndpoint(region)));
+        }
+        return builder.build();
+    }
+
+    private S3Presigner buildRegionalPresigner(String region) {
+        var builder = S3Presigner.builder()
+                .region(Region.of(region))
+                .credentialsProvider(awsCredentialsProvider);
+        if (StringUtils.hasText(endpoint)) {
+            builder.endpointOverride(URI.create(buildRegionalEndpoint(region)));
+        }
+        return builder.build();
+    }
+
+    private String buildRegionalEndpoint(String region) {
+        if (!StringUtils.hasText(endpoint)) {
+            return "https://s3." + region + ".amazonaws.com";
+        }
+        return endpoint.replace(defaultRegion, region);
+    }
+
+    private void closeIfRegional(S3Client client) {
+        if (client != s3Client) {
+            client.close();
+        }
+    }
+
+    private void closeIfRegional(S3Presigner presigner) {
+        if (presigner != s3Presigner) {
+            presigner.close();
         }
     }
 }

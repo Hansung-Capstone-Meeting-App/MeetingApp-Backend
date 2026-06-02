@@ -1,156 +1,320 @@
 <!DOCTYPE html>
-<!-- 회의 PDF 리포트 템플릿 (MeetingExportService.TEMPLATE) — 변수: report -->
 <html xmlns:th="http://www.thymeleaf.org" lang="ko">
 <head>
     <meta charset="UTF-8"/>
     <style>
         @page {
             size: A4;
-            margin: 18mm 16mm 20mm 16mm;
+            margin: 16mm;
         }
+
+        :root {
+            --ink: #132238;
+            --muted: #6f7c8c;
+            --line: #dbe4ee;
+            --surface: #f5f8fb;
+            --surface-strong: #e9f0f7;
+            --accent: #0f6cbd;
+            --accent-soft: #dcecff;
+            --ok: #1f7a4d;
+            --warn: #9a6700;
+            --done: #5b4bc4;
+        }
+
         * {
             box-sizing: border-box;
             font-family: 'MalgunGothic';
         }
+
         body {
-            font-size: 10.5pt;
-            color: #1a1a1a;
-            line-height: 1.5;
             margin: 0;
+            color: var(--ink);
+            font-size: 10pt;
+            line-height: 1.55;
         }
-        h1 {
-            font-size: 18pt;
-            font-weight: 700;
-            margin: 0 0 4px 0;
-            color: #111;
+
+        .hero {
+            background: linear-gradient(135deg, #0f6cbd 0%, #2b88d8 55%, #76b5eb 100%);
+            color: #fff;
+            border-radius: 18px;
+            padding: 22px 24px 20px;
         }
-        .meta {
+
+        .eyebrow {
             font-size: 9pt;
-            color: #555;
-            margin-bottom: 20px;
-        }
-        .meta span + span::before {
-            content: " · ";
-        }
-        h2 {
-            font-size: 12pt;
-            font-weight: 700;
-            margin: 22px 0 8px 0;
-            padding-bottom: 4px;
-            border-bottom: 1px solid #ddd;
-            color: #222;
-        }
-        .summary {
-            white-space: pre-wrap;
+            opacity: 0.85;
             margin: 0 0 10px 0;
         }
+
+        h1 {
+            margin: 0;
+            font-size: 20pt;
+            line-height: 1.25;
+            font-weight: 700;
+        }
+
+        .hero-meta {
+            margin-top: 12px;
+            font-size: 9pt;
+            opacity: 0.92;
+        }
+
+        .hero-meta span + span::before {
+            content: " · ";
+        }
+
+        .grid {
+            margin-top: 16px;
+            font-size: 0;
+        }
+
+        .stat {
+            display: inline-block;
+            width: 24.2%;
+            margin-right: 1%;
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 14px;
+            padding: 14px 14px 12px;
+            vertical-align: top;
+        }
+
+        .stat:last-child {
+            margin-right: 0;
+        }
+
+        .stat-label {
+            margin: 0;
+            font-size: 8.8pt;
+            color: var(--muted);
+        }
+
+        .stat-value {
+            margin: 6px 0 0 0;
+            font-size: 17pt;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .section {
+            margin-top: 18px;
+            border: 1px solid var(--line);
+            border-radius: 16px;
+            background: #fff;
+            padding: 18px 18px 16px;
+        }
+
+        .section-title {
+            margin: 0 0 12px 0;
+            font-size: 12pt;
+            font-weight: 700;
+            color: var(--ink);
+        }
+
+        .summary {
+            margin: 0;
+            white-space: pre-wrap;
+        }
+
         .keywords {
             margin: 0;
             padding: 0;
             list-style: none;
         }
+
         .keywords li {
             display: inline-block;
-            background: #f0f4f8;
-            color: #334;
-            padding: 2px 8px;
-            margin: 0 6px 6px 0;
-            border-radius: 4px;
+            margin: 0 8px 8px 0;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: var(--accent-soft);
+            color: var(--accent);
             font-size: 9pt;
         }
-        .stats {
-            font-size: 9.5pt;
-            color: #444;
-            margin-bottom: 8px;
-        }
+
         table {
             width: 100%;
-            border-collapse: collapse;
-            font-size: 9.5pt;
+            border-collapse: separate;
+            border-spacing: 0;
+            font-size: 9.4pt;
         }
+
+        thead th {
+            background: var(--surface-strong);
+            color: var(--ink);
+            font-weight: 700;
+            border-top: 1px solid var(--line);
+            border-bottom: 1px solid var(--line);
+        }
+
         th, td {
-            border: 1px solid #ddd;
-            padding: 6px 8px;
             text-align: left;
+            padding: 10px 11px;
+            border-bottom: 1px solid var(--line);
             vertical-align: top;
         }
-        th {
-            background: #f5f7fa;
+
+        thead th:first-child,
+        tbody td:first-child {
+            border-left: 1px solid var(--line);
+        }
+
+        thead th:last-child,
+        tbody td:last-child {
+            border-right: 1px solid var(--line);
+        }
+
+        thead th:first-child {
+            border-top-left-radius: 12px;
+        }
+
+        thead th:last-child {
+            border-top-right-radius: 12px;
+        }
+
+        tbody tr:last-child td:first-child {
+            border-bottom-left-radius: 12px;
+        }
+
+        tbody tr:last-child td:last-child {
+            border-bottom-right-radius: 12px;
+        }
+
+        .task-title {
+            font-weight: 700;
+            color: var(--ink);
+            margin-bottom: 3px;
+        }
+
+        .task-desc {
+            color: var(--muted);
+            font-size: 8.9pt;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 8.5pt;
             font-weight: 700;
         }
-        .col-status { width: 12%; }
-        .col-due { width: 18%; }
-        .col-assignee { width: 14%; }
-        .empty {
-            color: #888;
-            font-size: 9.5pt;
-            margin: 4px 0 0 0;
+
+        .status-todo {
+            background: #fff2cc;
+            color: var(--warn);
         }
+
+        .status-progress {
+            background: #dff2ff;
+            color: var(--accent);
+        }
+
+        .status-done {
+            background: #e6dbff;
+            color: var(--done);
+        }
+
+        .empty {
+            margin: 0;
+            color: var(--muted);
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 12px 14px;
+        }
+
         .footer {
-            margin-top: 28px;
-            padding-top: 8px;
-            border-top: 1px solid #eee;
-            font-size: 8.5pt;
-            color: #888;
+            margin-top: 18px;
             text-align: right;
+            color: var(--muted);
+            font-size: 8.5pt;
         }
     </style>
 </head>
 <body>
 <div th:object="${report}">
-    <p class="meta" th:if="*{workspaceName != null}" th:text="*{workspaceName}">워크스페이스</p>
-    <h1 th:text="*{meetingTitle}">회의 제목</h1>
-    <p class="meta">
-        <span th:text="'회의 생성: ' + *{meetingCreatedAt}">회의 생성</span>
-        <span th:if="*{analyzedAt != null and analyzedAt != '-'}"
-              th:text="'분석 완료: ' + *{analyzedAt}">분석 완료</span>
-    </p>
+    <div class="hero">
+        <p class="eyebrow" th:if="*{workspaceName != null}" th:text="*{workspaceName}">워크스페이스</p>
+        <p class="eyebrow" th:if="*{workspaceName == null}">MeetingApp Report</p>
+        <h1 th:text="*{meetingTitle}">회의 제목</h1>
+        <p class="hero-meta">
+            <span th:text="'회의 생성 ' + *{meetingCreatedAt}">회의 생성</span>
+            <span th:if="*{analyzedAt != null and analyzedAt != '-'}"
+                  th:text="'분석 완료 ' + *{analyzedAt}">분석 완료</span>
+        </p>
+    </div>
 
-    <h2>회의 요약</h2>
-    <p class="summary" th:text="*{summary}">요약</p>
-  <ul class="keywords" th:if="*{keywords != null and !keywords.isEmpty()}">
-        <li th:each="kw : *{keywords}" th:text="'#' + ${kw}">키워드</li>
-    </ul>
+    <div class="grid">
+        <div class="stat">
+            <p class="stat-label">전체 할 일</p>
+            <p class="stat-value" th:text="*{taskTotal}">0</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">해야 할 일</p>
+            <p class="stat-value" th:text="*{taskTodo}">0</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">진행 중</p>
+            <p class="stat-value" th:text="*{taskInProgress}">0</p>
+        </div>
+        <div class="stat">
+            <p class="stat-label">완료</p>
+            <p class="stat-value" th:text="*{taskDone}">0</p>
+        </div>
+    </div>
 
-    <h2 th:text="'할일 (' + *{taskTotal} + '건)'">할일</h2>
-    <p class="stats"
-       th:text="'할 일 ' + *{taskTodo} + ' · 진행 중 ' + *{taskInProgress} + ' · 완료 ' + *{taskDone}">
-        통계
-    </p>
-    <table th:if="*{tasks != null and !tasks.isEmpty()}">
-        <thead>
-        <tr>
-            <th class="col-status">상태</th>
-            <th>할일</th>
-            <th class="col-assignee">담당자</th>
-            <th class="col-due">마감일</th>
-        </tr>
-        </thead>
-        <tbody>
-        <tr th:each="task : *{tasks}">
-            <td th:text="${task.statusLabel}">할 일</td>
-            <td>
-                <span th:text="${task.title}">제목</span>
-                <br th:if="${task.description != null and !task.description.isEmpty()}"/>
-                <span th:if="${task.description != null and !task.description.isEmpty()}"
-                      style="color:#666;font-size:9pt;"
-                      th:text="${task.description}">설명</span>
-            </td>
-            <td th:text="${task.assigneeName}">담당자</td>
-            <td th:text="${task.dueDate}">마감일</td>
-        </tr>
-        </tbody>
-    </table>
-    <p class="empty" th:if="*{tasks == null or tasks.isEmpty()}">등록된 할일이 없습니다.</p>
+    <section class="section">
+        <h2 class="section-title">회의 요약</h2>
+        <p class="summary" th:text="*{summary}">요약</p>
+    </section>
 
-    <div th:if="*{includeEvents}">
-        <h2 th:text="'일정 (' + *{events.size()} + '건)'">일정</h2>
+    <section class="section" th:if="*{keywords != null and !keywords.isEmpty()}">
+        <h2 class="section-title">핵심 키워드</h2>
+        <ul class="keywords">
+            <li th:each="kw : *{keywords}" th:text="'#' + ${kw}">키워드</li>
+        </ul>
+    </section>
+
+    <section class="section">
+        <h2 class="section-title">할 일 정리</h2>
+        <table th:if="*{tasks != null and !tasks.isEmpty()}">
+            <thead>
+            <tr>
+                <th style="width: 15%;">상태</th>
+                <th>내용</th>
+                <th style="width: 18%;">담당자</th>
+                <th style="width: 20%;">마감일</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="task : *{tasks}">
+                <td>
+                    <span class="status"
+                          th:classappend="${task.statusLabel == '할 일'} ? ' status-todo' :
+                                          (${task.statusLabel == '진행 중'} ? ' status-progress' : ' status-done')"
+                          th:text="${task.statusLabel}">할 일</span>
+                </td>
+                <td>
+                    <div class="task-title" th:text="${task.title}">제목</div>
+                    <div class="task-desc"
+                         th:if="${task.description != null and !task.description.isEmpty()}"
+                         th:text="${task.description}">설명</div>
+                </td>
+                <td th:text="${task.assigneeName}">담당자</td>
+                <td th:text="${task.dueDate}">마감일</td>
+            </tr>
+            </tbody>
+        </table>
+        <p class="empty" th:if="*{tasks == null or tasks.isEmpty()}">정리된 할 일이 없습니다.</p>
+    </section>
+
+    <section class="section" th:if="*{includeEvents}">
+        <h2 class="section-title" th:text="'일정 캘린더 (' + *{events.size()} + ')'">일정 캘린더</h2>
         <table th:if="*{events != null and !events.isEmpty()}">
             <thead>
             <tr>
                 <th>일정</th>
-                <th>기간</th>
-                <th class="col-assignee">담당자</th>
+                <th style="width: 32%;">기간</th>
+                <th style="width: 18%;">담당자</th>
             </tr>
             </thead>
             <tbody>
@@ -161,10 +325,10 @@
             </tr>
             </tbody>
         </table>
-        <p class="empty" th:if="*{events == null or events.isEmpty()}">등록된 일정이 없습니다.</p>
-    </div>
+        <p class="empty" th:if="*{events == null or events.isEmpty()}">추출된 일정이 없습니다.</p>
+    </section>
 
-    <p class="footer" th:text="'MeetingApp · PDF 생성: ' + *{exportedAt}">푸터</p>
+    <p class="footer" th:text="'MeetingApp · 생성 시각 ' + *{exportedAt}">푸터</p>
 </div>
 </body>
 </html>

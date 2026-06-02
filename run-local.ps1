@@ -22,4 +22,4 @@ robocopy $source $target /E /XD .gradle build .git /NFL /NDL /NJH /NJS /NP | Out
 
 Set-Location $target
 
-.\gradlew.bat bootRun --args="--server.port=8080 --spring.devtools.restart.enabled=false --spring.devtools.livereload.enabled=false --spring.datasource.url=jdbc:h2:mem:meetingapp;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DATABASE_TO_LOWER=TRUE --spring.datasource.driver-class-name=org.h2.Driver --spring.datasource.username=sa --spring.datasource.password= --jwt.secret=abcdefghijklmnopqrstuvwxyz123456 --cloud.aws.credentials.access-key=dummy --cloud.aws.credentials.secret-key=dummy --ai.assemblyai.api-key=dummy --ai.gemini.api-key=dummy"
+.\gradlew.bat bootRun --args="--server.port=8080 --spring.devtools.restart.enabled=false --spring.devtools.livereload.enabled=false"

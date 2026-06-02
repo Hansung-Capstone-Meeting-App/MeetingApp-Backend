@@ -68,3 +68,7 @@ tasks.named('test') {
 tasks.named('processResources') {
     doNotTrackState('OneDrive reparse-point resources cannot be snapshotted as regular files')
 }
+
+tasks.withType(JavaCompile).configureEach {
+    options.incremental = false
+}
