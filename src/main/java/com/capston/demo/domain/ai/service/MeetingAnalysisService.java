@@ -41,7 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class MeetingAnalysisService {
     private static final DateTimeFormatter DT_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss");
 
-    private final AssemblyAiService assemblyAiService;
+    private final ClovaSpeechService clovaSpeechService;
     private final GeminiAiService geminiAiService;
     private final MeetingRepository meetingRepository;
     private final MeetingRecordingRepository recordingRepository;
@@ -83,7 +83,7 @@ public class MeetingAnalysisService {
         recording.setStatus(RecordingStatus.PROCESSING);
 
         String audioUrl = recordingService.generateDownloadPresignedUrl(recordingId, userId).getPresignedUrl();
-        AssemblyAiTranscriptResult stt = assemblyAiService.transcribe(audioUrl);
+        AssemblyAiTranscriptResult stt = clovaSpeechService.transcribe(audioUrl);
         Workspace workspace = resolveWorkspace(meeting);
         GeminiCorrectionResult correction;
         try {
