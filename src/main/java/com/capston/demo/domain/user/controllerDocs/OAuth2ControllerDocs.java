@@ -3,6 +3,7 @@ package com.capston.demo.domain.user.controllerDocs;
 import com.capston.demo.domain.user.dto.request.CreateNotionCalendarDatabaseRequestDto;
 import com.capston.demo.domain.user.dto.request.OAuthCodeRequestDto;
 import com.capston.demo.domain.user.dto.request.SetCalendarDatabaseRequestDto;
+import com.capston.demo.domain.user.dto.request.SetNotionRootPageRequestDto;
 import com.capston.demo.domain.user.dto.response.LoginResponseDto;
 import com.capston.demo.domain.user.dto.response.NotionStatusResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -213,13 +214,64 @@ public interface OAuth2ControllerDocs {
 
     @Operation(
             summary = "Notion 연동·DB 설정 상태 조회",
-            description = "설정 화면용. Notion 미연동이어도 200 + linked=false를 반환합니다.",
+            description = """
+                    설정 화면용. Notion 미연동이어도 200 + linked=false.
+                    - parentPage*: PUT /notion/root-page 로 저장한 최상위 page (DB 컬럼 root_page_id)
+                    - calendar* / meetingNotes*: 등록·생성된 Notion database
+                    - ready: linked && parentPageConfigured && calendarConfigured && meetingNotesConfigured
+                    - name/url: Notion API 조회 실패 시 null (configured·id는 DB 값 유지)
+                    """,
             responses = {
                     @ApiResponse(responseCode = "200", description = "조회 성공"),
                     @ApiResponse(responseCode = "401", description = "JWT 인증 필요")
             }
     )
     ResponseEntity<NotionStatusResponse> getNotionStatus();
+
+    @Operation(
+            summary = "Notion 최상위 page 후보 목록 조회",
+            description = """
+                    Meetflow 캘린더·회의록 DB를 둘 workspace 최상위 page 목록을 반환합니다.
+                    - DB 행(일정 page)은 제외
+                    - 선택한 id는 PUT /notion/root-page 로 저장한 뒤 DB 생성 API 호출
+                    """,
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "조회 성공"),
+                    @ApiResponse(responseCode = "401", description = "JWT 인증 필요"),
+                    @ApiResponse(responseCode = "403", description = "Notion 미연동")
+            }
+    )
+    ResponseEntity<?> getNotionRootPages();
+
+    @Operation(
+            summary = "Notion 최상위 page 저장",
+            description = """
+                    GET /notion/root-pages 에서 선택한 page ID를 user_notion_accounts.root_page_id 에 저장합니다.
+                    이후 POST calendar-targets / meeting-notes-targets 에서 parentPageId 생략 시 이 값을 사용합니다.
+                    """,
+            requestBody = @RequestBody(
+                    required = true,
+                    content = @Content(
+                            mediaType = "application/json",
+                            schema = @Schema(implementation = SetNotionRootPageRequestDto.class),
+                            examples = @ExampleObject(
+                                    name = "요청 예시",
+                                    value = """
+                                            {
+                                              "parentPageId": "page-uuid-from-root-pages"
+                                            }
+                                            """
+                            )
+                    )
+            ),
+            responses = {
+                    @ApiResponse(responseCode = "200", description = "저장 성공"),
+                    @ApiResponse(responseCode = "400", description = "parentPageId 누락 또는 최상위 page 아님"),
+                    @ApiResponse(responseCode = "401", description = "JWT 인증 필요"),
+                    @ApiResponse(responseCode = "403", description = "Notion 미연동")
+            }
+    )
+    ResponseEntity<?> setNotionRootPage(SetNotionRootPageRequestDto request);
 
     @Operation(
             summary = "Notion 캘린더 DB 후보 목록 조회",

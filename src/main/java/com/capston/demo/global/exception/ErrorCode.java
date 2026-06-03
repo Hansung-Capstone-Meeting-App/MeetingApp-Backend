@@ -58,7 +58,11 @@ public enum ErrorCode {
     NOTION_MEETING_NOTES_EXPORT_FAILED(400, "노션에 회의록을보내지 못했습니다. 데이터베이스 ID와 권한을 확인해주세요."),
     NOTION_EVENT_CREATE_FAILED(400, "노션 캘린더에 일정을 생성하지 못했습니다. 데이터베이스 ID와 권한을 확인해주세요."),
     NOTION_CALENDAR_TARGETS_FAILED(400, "노션 캘린더 목록을 가져오지 못했습니다. Notion 연동 및 읽기 권한을 확인해주세요."),
-    NOTION_CALENDAR_CREATE_FAILED(400, "노션에 캘린더 데이터베이스를 만들지 못했습니다. Notion에 페이지를 만든 뒤 다시 시도하거나 parentPageId를 지정해주세요.");
+    NOTION_CALENDAR_CREATE_FAILED(400, "노션에 캘린더 데이터베이스를 만들지 못했습니다. Notion에 페이지를 만든 뒤 다시 시도하거나 parentPageId를 지정해주세요."),
+    NOTION_ROOT_PAGES_FAILED(400, "Notion 최상위 페이지 목록을 가져오지 못했습니다. Notion 연동 및 페이지 읽기 권한을 확인해주세요."),
+    NOTION_ROOT_PAGE_REQUIRED(400, "Meetflow를 둘 Notion 페이지를 선택해주세요. GET /api/oauth2/notion/root-pages 로 후보를 확인한 뒤 parentPageId를 지정해주세요."),
+    NOTION_ROOT_PAGE_AMBIGUOUS(400, "Notion 최상위 페이지가 여러 개입니다. GET /api/oauth2/notion/root-pages 에서 parentPageId를 선택해주세요."),
+    NOTION_ROOT_PAGE_INVALID(400, "선택한 페이지는 Notion workspace 최상위 페이지가 아닙니다. GET /api/oauth2/notion/root-pages 목록에서 선택해주세요.");
 
     private final int status;
     private final String message;

@@ -46,6 +46,10 @@ public class UserNotionAccount {
     @Column(name = "meeting_notes_database_id", length = 100)
     private String meetingNotesDatabaseId;
 
+    /** 캘린더·회의록 DB를 함께 두는 Notion 최상위 페이지 ID */
+    @Column(name = "root_page_id", length = 100)
+    private String rootPageId;
+
     // 나중에 여러 Notion 계정을 연결할 수 있게 하려면 isPrimary 같은 플래그도 둘 수 있음
 }
 
