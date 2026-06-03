@@ -211,10 +211,12 @@ public interface MeetingControllerDocs {
 
     @Operation(
             summary = "화자 매핑 저장",
-            description = "STT가 부여한 화자 레이블을 Slack 사용자와 연결합니다.\n\n" +
-                    "- `slackUserId`: Slack 사용자 ID (U로 시작)\n" +
+            description = "STT가 부여한 화자 레이블을 실제 사용자와 연결합니다.\n\n" +
+                    "- `speakerLabel`: 전사 결과의 화자 레이블 (SPEAKER_00, SPEAKER_01, ...)\n" +
+                    "- `userId`: 워크스페이스 멤버 userId (`GET /api/workspaces/{id}/members` 에서 확인)\n" +
                     "- `userName`: 표시 이름\n" +
-                    "- 기존 매핑이 있으면 덮어씁니다.",
+                    "- 기존 매핑이 있으면 덮어씁니다.\n\n" +
+                    "**화자 매핑 후 gemini-analyze를 실행해야 Task에 담당자가 설정됩니다.**",
             parameters = {
                     @Parameter(name = "transcriptId", description = "트랜스크립트 ID", example = "1", required = true)
             },
@@ -228,8 +230,9 @@ public interface MeetingControllerDocs {
                                     value = """
                                             {
                                               "mappings": [
-                                                { "speakerLabel": "A", "userName": "김철수", "slackUserId": "U12345" },
-                                                { "speakerLabel": "B", "userName": "박영희", "slackUserId": "U67890" }
+                                                { "speakerLabel": "SPEAKER_00", "userId": 41, "userName": "홍길동" },
+                                                { "speakerLabel": "SPEAKER_01", "userId": 42, "userName": "김철수" },
+                                                { "speakerLabel": "SPEAKER_02", "userId": 43, "userName": "박영희" }
                                               ]
                                             }
                                             """

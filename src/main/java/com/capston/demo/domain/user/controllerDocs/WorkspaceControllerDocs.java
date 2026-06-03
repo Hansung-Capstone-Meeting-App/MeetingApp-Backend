@@ -34,7 +34,9 @@ public interface WorkspaceControllerDocs {
                                     name = "요청 예시",
                                     value = """
                                             {
-                                              "name": "한성대 캡스톤팀"
+                                              "name": "한성대 캡스톤팀",
+                                              "meetingCategory": "개발",
+                                              "meetingContext": "React, Spring Boot 기반 캡스톤 프로젝트"
                                             }
                                             """
                             )

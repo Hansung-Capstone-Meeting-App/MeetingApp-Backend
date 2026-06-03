@@ -37,10 +37,11 @@ public interface MeetingAnalysisControllerDocs {
             Long recordingId);
 
     @Operation(
-            summary = "STT 전사 (AssemblyAI)",
-            description = "S3에 저장된 녹음 파일을 AssemblyAI로 전사합니다. 화자 분리가 자동으로 수행됩니다.\n\n" +
+            summary = "STT 전사 (Clova Speech)",
+            description = "S3에 저장된 녹음 파일을 Clova Speech로 전사합니다. 화자 분리가 자동으로 수행됩니다.\n\n" +
                     "완료 후 MongoDB에 트랜스크립트가 저장되며 `transcriptId`가 반환됩니다.\n\n" +
-                    "이후 화자 매핑 → Gemini 분석 순서로 진행합니다.",
+                    "이후 **화자 매핑 → Gemini 분석** 순서로 진행합니다.\n\n" +
+                    "화자 레이블은 SPEAKER_00, SPEAKER_01, ... 형식으로 반환됩니다.",
             parameters = {
                     @Parameter(name = "meetingId", description = "회의 ID", example = "1", required = true),
                     @Parameter(name = "recordingId", description = "녹음 ID", example = "1", required = true)
