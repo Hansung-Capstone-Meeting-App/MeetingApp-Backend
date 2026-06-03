@@ -214,7 +214,13 @@ public interface OAuth2ControllerDocs {
 
     @Operation(
             summary = "Notion 연동·DB 설정 상태 조회",
-            description = "설정 화면용. Notion 미연동이어도 200 + linked=false를 반환합니다.",
+            description = """
+                    설정 화면용. Notion 미연동이어도 200 + linked=false.
+                    - parentPage*: PUT /notion/root-page 로 저장한 최상위 page (DB 컬럼 root_page_id)
+                    - calendar* / meetingNotes*: 등록·생성된 Notion database
+                    - ready: linked && parentPageConfigured && calendarConfigured && meetingNotesConfigured
+                    - name/url: Notion API 조회 실패 시 null (configured·id는 DB 값 유지)
+                    """,
             responses = {
                     @ApiResponse(responseCode = "200", description = "조회 성공"),
                     @ApiResponse(responseCode = "401", description = "JWT 인증 필요")

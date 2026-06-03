@@ -37,6 +37,9 @@ public class NotionCalendarService {
 
     public record EventNotionSyncResult(String notionPageId, boolean updated) {}
 
+    /** GET /notion/status — Notion page·database 제목·URL */
+    public record NotionObjectMeta(String name, String url) {}
+
     // 사용할 Notion API 버전 (요청 헤더에 넣어야 함)
     @Value("${spring.security.oauth2.client.provider.notion.notion-version:2022-06-28}")
     private String notionVersion;
@@ -685,13 +688,9 @@ public class NotionCalendarService {
         return java.util.Optional.empty();
     }
 
-    /**
-     * 등록된 calendar database ID 로 Notion DB 제목 조회 (status 화면용).
-     * 실패 시 null 반환 — status API 전체는 실패하지 않음.
-     */
-    public String fetchDatabaseName(String accessToken, String databaseId) {
-        if (databaseId == null || databaseId.isBlank()) {
-            return null;
+    public java.util.Optional<NotionObjectMeta> fetchDatabaseMeta(String accessToken, String databaseId) {
+        if (!StringUtils.hasText(databaseId)) {
+            return java.util.Optional.empty();
         }
         try {
             HttpEntity<Void> request = new HttpEntity<>(notionHeaders(accessToken));
@@ -702,22 +701,24 @@ public class NotionCalendarService {
                     Map.class
             );
             if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
-                String name = extractTitle(response.getBody().get("title"));
-                return name.isBlank() ? null : name;
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = response.getBody();
+                String name = extractTitle(body.get("title"));
+                String url = resolveNotionUrl(body, databaseId);
+                if (name.isBlank() && url == null) {
+                    return java.util.Optional.empty();
+                }
+                return java.util.Optional.of(new NotionObjectMeta(name.isBlank() ? null : name, url));
             }
         } catch (Exception e) {
-            log.warn("Failed to fetch Notion database name for id={}: {}", databaseId, e.getMessage());
+            log.warn("Failed to fetch Notion database meta for id={}: {}", databaseId, e.getMessage());
         }
-        return null;
+        return java.util.Optional.empty();
     }
 
-    /**
-     * root page ID 로 Notion page 제목 조회 (status 화면용).
-     * 실패 시 null 반환.
-     */
-    public String fetchPageName(String accessToken, String pageId) {
+    public java.util.Optional<NotionObjectMeta> fetchPageMeta(String accessToken, String pageId) {
         if (!StringUtils.hasText(pageId)) {
-            return null;
+            return java.util.Optional.empty();
         }
         try {
             HttpEntity<Void> request = new HttpEntity<>(notionHeaders(accessToken));
@@ -731,12 +732,35 @@ public class NotionCalendarService {
                 @SuppressWarnings("unchecked")
                 Map<String, Object> body = response.getBody();
                 String name = extractPageTitle(body);
-                return name.isBlank() ? null : name;
+                String url = resolveNotionUrl(body, pageId);
+                if (name.isBlank() && url == null) {
+                    return java.util.Optional.empty();
+                }
+                return java.util.Optional.of(new NotionObjectMeta(name.isBlank() ? null : name, url));
             }
         } catch (Exception e) {
-            log.warn("Failed to fetch Notion page name for id={}: {}", pageId, e.getMessage());
+            log.warn("Failed to fetch Notion page meta for id={}: {}", pageId, e.getMessage());
         }
-        return null;
+        return java.util.Optional.empty();
+    }
+
+    public String fetchDatabaseName(String accessToken, String databaseId) {
+        return fetchDatabaseMeta(accessToken, databaseId).map(NotionObjectMeta::name).orElse(null);
+    }
+
+    public String fetchPageName(String accessToken, String pageId) {
+        return fetchPageMeta(accessToken, pageId).map(NotionObjectMeta::name).orElse(null);
+    }
+
+    private String resolveNotionUrl(Map<String, Object> body, String id) {
+        String url = asString(body.get("url"));
+        if (StringUtils.hasText(url)) {
+            return url;
+        }
+        if (!StringUtils.hasText(id)) {
+            return null;
+        }
+        return "https://www.notion.so/" + id.replace("-", "");
     }
 
     private HttpHeaders notionHeaders(String accessToken) {

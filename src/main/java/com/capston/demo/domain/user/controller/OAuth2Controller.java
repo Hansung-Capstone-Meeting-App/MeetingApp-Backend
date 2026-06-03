@@ -571,38 +571,55 @@ public class OAuth2Controller implements OAuth2ControllerDocs {
                 .orElseGet(() -> ResponseEntity.status(403).body(Map.of("error", "Notion 계정을 먼저 연동해주세요.")));
     }
 
-    private NotionStatusResponse buildNotionStatus(UserNotionAccount account) { //Notion 상태 응답 생성
-        String calendarDatabaseId = account.getCalendarDatabaseId(); //캘린더 데이터베이스 ID 추출
-        boolean calendarConfigured = calendarDatabaseId != null && !calendarDatabaseId.isBlank(); //캘린더 데이터베이스 설정 여부 확인
+    private NotionStatusResponse buildNotionStatus(UserNotionAccount account) {
+        String accessToken = account.getAccessToken();
+
+        String parentPageId = account.getRootPageId();
+        boolean parentPageConfigured = parentPageId != null && !parentPageId.isBlank();
+        String parentPageName = null;
+        String parentPageUrl = null;
+        if (parentPageConfigured) {
+            var meta = notionCalendarService.fetchPageMeta(accessToken, parentPageId);
+            parentPageName = meta.map(NotionCalendarService.NotionObjectMeta::name).orElse(null);
+            parentPageUrl = meta.map(NotionCalendarService.NotionObjectMeta::url).orElse(null);
+        }
+
+        String calendarDatabaseId = account.getCalendarDatabaseId();
+        boolean calendarConfigured = calendarDatabaseId != null && !calendarDatabaseId.isBlank();
         String calendarName = null;
+        String calendarUrl = null;
         if (calendarConfigured) {
-            calendarName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), calendarDatabaseId); //캘린더 데이터베이스 이름 추출
+            var meta = notionCalendarService.fetchDatabaseMeta(accessToken, calendarDatabaseId);
+            calendarName = meta.map(NotionCalendarService.NotionObjectMeta::name).orElse(null);
+            calendarUrl = meta.map(NotionCalendarService.NotionObjectMeta::url).orElse(null);
         }
 
-        String meetingNotesDatabaseId = account.getMeetingNotesDatabaseId(); //회의록 데이터베이스 ID 추출
-        boolean meetingNotesConfigured = meetingNotesDatabaseId != null && !meetingNotesDatabaseId.isBlank(); //회의록 데이터베이스 설정 여부 확인
+        String meetingNotesDatabaseId = account.getMeetingNotesDatabaseId();
+        boolean meetingNotesConfigured = meetingNotesDatabaseId != null && !meetingNotesDatabaseId.isBlank();
         String meetingNotesName = null;
+        String meetingNotesUrl = null;
         if (meetingNotesConfigured) {
-            meetingNotesName = notionCalendarService.fetchDatabaseName(account.getAccessToken(), meetingNotesDatabaseId); //회의록 데이터베이스 이름 추출
+            var meta = notionCalendarService.fetchDatabaseMeta(accessToken, meetingNotesDatabaseId);
+            meetingNotesName = meta.map(NotionCalendarService.NotionObjectMeta::name).orElse(null);
+            meetingNotesUrl = meta.map(NotionCalendarService.NotionObjectMeta::url).orElse(null);
         }
 
-        String rootPageId = account.getRootPageId();
-        boolean rootPageConfigured = rootPageId != null && !rootPageId.isBlank();
-        String rootPageName = null;
-        if (rootPageConfigured) {
-            rootPageName = notionCalendarService.fetchPageName(account.getAccessToken(), rootPageId);
-        }
-
-        return new NotionStatusResponse( //Notion 상태 응답 생성
-                true, //연동 여부 설정
-                calendarConfigured, //캘린더 데이터베이스 설정 여부 설정
-                account.getNotionName(), //Notion 이름 설정
-                calendarName, //캘린더 데이터베이스 이름 설정
-                meetingNotesConfigured, //회의록 데이터베이스 설정 여부 설정
-                meetingNotesName, //회의록 데이터베이스 이름 설정
-                rootPageConfigured,
-                rootPageName
-        ); //Notion 상태 응답 생성
+        return new NotionStatusResponse(
+                true,
+                account.getNotionName(),
+                parentPageConfigured,
+                parentPageId,
+                parentPageName,
+                parentPageUrl,
+                calendarConfigured,
+                calendarDatabaseId,
+                calendarName,
+                calendarUrl,
+                meetingNotesConfigured,
+                meetingNotesDatabaseId,
+                meetingNotesName,
+                meetingNotesUrl
+        );
     }
 
     /**
