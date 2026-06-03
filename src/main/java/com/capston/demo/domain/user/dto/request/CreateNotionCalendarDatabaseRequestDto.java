@@ -17,7 +17,7 @@ public class CreateNotionCalendarDatabaseRequestDto {
 
     /**
      * DB를 만들 부모 Notion 페이지 ID.
-     * 없으면 연동 워크스페이스에서 접근 가능한 첫 페이지를 사용한다.
+     * 없으면 PUT /notion/root-page 로 저장된 rootPageId 를 사용한다.
      */
     private String parentPageId;
 }

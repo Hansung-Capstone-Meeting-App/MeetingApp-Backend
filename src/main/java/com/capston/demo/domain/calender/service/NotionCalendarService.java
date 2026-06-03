@@ -47,6 +47,7 @@ public class NotionCalendarService {
     private static final String NOTION_SEARCH_URL = "https://api.notion.com/v1/search";
     // Notion database 단건 조회 (캘린더 이름 등)
     private static final String NOTION_DATABASES_URL = "https://api.notion.com/v1/databases/";
+    private static final String NOTION_PAGES_RETRIEVE_URL = "https://api.notion.com/v1/pages/";
     private static final String NOTION_VIEWS_URL = "https://api.notion.com/v1/views";
     private static final String NOTION_VIEW_VERSION = "2026-03-11";
     // 일정 sync(createEventInNotion)와 동일한 컬럼명
@@ -376,42 +377,141 @@ public class NotionCalendarService {
         }
     }
 
+    public record CalendarDatabaseCreateResult(NotionCalendarTargetResponse target, String parentPageId) {}
+
+    /**
+     * OAuth로 접근 가능한 Notion workspace 최상위 page 목록 (DB 행·하위 page 제외).
+     * 설정 마법사에서 parentPageId 선택용.
+     */
+    public List<NotionCalendarTargetResponse> searchIntegrationRootPages(String accessToken) {
+        try {
+            List<NotionCalendarTargetResponse> pages = collectWorkspaceRootPages(accessToken);
+            pages.sort(Comparator.comparing(NotionCalendarTargetResponse::getName, String.CASE_INSENSITIVE_ORDER));
+            return pages;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (Exception e) {
+            log.error("Error while searching Notion root pages: {}", e.getMessage(), e);
+            throw new BusinessException(ErrorCode.NOTION_ROOT_PAGES_FAILED, e);
+        }
+    }
+
+    /**
+     * root-pages 목록에서 선택한 page ID가 workspace 최상위인지 검증한다.
+     *
+     * @return 저장할 page ID (trim)
+     */
+    public String validateWorkspaceRootPage(String accessToken, String pageId) {
+        if (!StringUtils.hasText(pageId)) {
+            throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_REQUIRED);
+        }
+        String trimmed = pageId.trim();
+        try {
+            HttpEntity<Void> request = new HttpEntity<>(notionHeaders(accessToken));
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_PAGES_RETRIEVE_URL + trimmed,
+                    HttpMethod.GET,
+                    request,
+                    Map.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_INVALID);
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = response.getBody();
+            if (Boolean.TRUE.equals(body.get("archived"))) {
+                throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_INVALID);
+            }
+            if (!isWorkspaceRootPage(body) || isDatabaseChildPage(body)) {
+                throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_INVALID);
+            }
+            return trimmed;
+        } catch (BusinessException e) {
+            throw e;
+        } catch (HttpClientErrorException e) {
+            log.warn("Notion root page validate failed id={}: status={}", trimmed, e.getStatusCode());
+            throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_INVALID, e);
+        } catch (Exception e) {
+            log.warn("Notion root page validate error id={}: {}", trimmed, e.getMessage());
+            throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_INVALID, e);
+        }
+    }
+
+    /**
+     * DB 생성 parent page 결정.
+     * 우선순위: explicit → stored root → calendar DB parent → workspace root page 1개 자동.
+     */
+    public String resolveIntegrationParentPageId(String accessToken,
+                                                 String explicitParentPageId,
+                                                 String storedRootPageId,
+                                                 String calendarDatabaseId) {
+        if (StringUtils.hasText(explicitParentPageId)) {
+            return explicitParentPageId.trim();
+        }
+        if (StringUtils.hasText(storedRootPageId)) {
+            return storedRootPageId.trim();
+        }
+        if (StringUtils.hasText(calendarDatabaseId)) {
+            java.util.Optional<String> dbParent = fetchDatabaseParentPageId(accessToken, calendarDatabaseId);
+            if (dbParent.isPresent()) {
+                return dbParent.get();
+            }
+        }
+        List<NotionCalendarTargetResponse> roots = collectWorkspaceRootPages(accessToken);
+        if (roots.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_REQUIRED);
+        }
+        if (roots.size() == 1) {
+            return roots.get(0).getId();
+        }
+        throw new BusinessException(ErrorCode.NOTION_ROOT_PAGE_AMBIGUOUS);
+    }
+
     /**
      * Notion에 일정용 database를 새로 생성한다 (Name·Date 속성 — sync와 동일).
-     *
-     * @param parentPageId null 이면 search 로 첫 page 사용
      */
-    public NotionCalendarTargetResponse createCalendarDatabase(String accessToken, String name, String parentPageId) {
-        if (parentPageId == null || parentPageId.isBlank()) {
+    public CalendarDatabaseCreateResult createCalendarDatabase(String accessToken,
+                                                               String name,
+                                                               String explicitParentPageId,
+                                                               String storedRootPageId,
+                                                               String calendarDatabaseId) {
+        if (!StringUtils.hasText(explicitParentPageId)) {
             java.util.Optional<NotionCalendarTargetResponse> existing = findAccessibleNameDateDatabase(accessToken);
             if (existing.isPresent()) {
                 ensureCalendarView(accessToken, existing.get().getId(), false);
-                return existing.get();
+                return new CalendarDatabaseCreateResult(existing.get(), null);
             }
         }
 
-        NotionCalendarTargetResponse created =
-                createNameDateDatabase(accessToken, name, parentPageId, DEFAULT_CALENDAR_DATABASE_NAME);
+        String resolvedParent = resolveIntegrationParentPageId(
+                accessToken, explicitParentPageId, storedRootPageId, calendarDatabaseId);
+        NotionCalendarTargetResponse created = createNameDateDatabase(
+                accessToken, name, resolvedParent, DEFAULT_CALENDAR_DATABASE_NAME);
         ensureCalendarView(accessToken, created.getId(), true);
-        return created;
+        return new CalendarDatabaseCreateResult(created, resolvedParent);
     }
 
     /**
      * Notion에 회의록 export용 database를 새로 생성한다 (Name·Date 속성 — 캘린더와 동일).
-     *
-     * @param parentPageId null 이면 search 로 첫 page 사용
      */
-    public NotionCalendarTargetResponse createMeetingNotesDatabase(String accessToken, String name, String parentPageId) {
-        return createNameDateDatabase(accessToken, name, parentPageId, DEFAULT_MEETING_NOTES_DATABASE_NAME);
+    public CalendarDatabaseCreateResult createMeetingNotesDatabase(String accessToken,
+                                                                   String name,
+                                                                   String explicitParentPageId,
+                                                                   String storedRootPageId,
+                                                                   String calendarDatabaseId) {
+        String resolvedParent = resolveIntegrationParentPageId(
+                accessToken, explicitParentPageId, storedRootPageId, calendarDatabaseId);
+        NotionCalendarTargetResponse created = createNameDateDatabase(
+                accessToken, name, resolvedParent, DEFAULT_MEETING_NOTES_DATABASE_NAME);
+        return new CalendarDatabaseCreateResult(created, resolvedParent);
     }
 
     private NotionCalendarTargetResponse createNameDateDatabase(String accessToken,
                                                                 String name,
-                                                                String parentPageId,
+                                                                String resolvedParentPageId,
                                                                 String defaultName) {
         try {
             String dbName = (name == null || name.isBlank()) ? defaultName : name.trim();
-            String resolvedParentPageId = resolveParentPageId(accessToken, parentPageId);
 
             Map<String, Object> parent = Map.of(
                     "type", "page_id",
@@ -459,49 +559,128 @@ public class NotionCalendarService {
         }
     }
 
-    private String resolveParentPageId(String accessToken, String parentPageId) {
-        if (parentPageId != null && !parentPageId.isBlank()) {
-            return parentPageId.trim();
-        }
-        return searchFirstAccessiblePageId(accessToken)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOTION_CALENDAR_CREATE_FAILED));
+    private List<NotionCalendarTargetResponse> collectWorkspaceRootPages(String accessToken) {
+        List<NotionCalendarTargetResponse> pages = new ArrayList<>();
+        String cursor = null;
+
+        do {
+            Map<String, Object> body = new HashMap<>();
+            body.put("filter", Map.of("value", "page", "property", "object"));
+            body.put("page_size", 100);
+            if (cursor != null) {
+                body.put("start_cursor", cursor);
+            }
+
+            HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, notionHeaders(accessToken));
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_SEARCH_URL,
+                    HttpMethod.POST,
+                    request,
+                    Map.class
+            );
+
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                throw new BusinessException(ErrorCode.NOTION_ROOT_PAGES_FAILED);
+            }
+
+            Map<String, Object> responseBody = response.getBody();
+            Object resultsObj = responseBody.get("results");
+            if (resultsObj instanceof List<?> results) {
+                for (Object item : results) {
+                    if (!(item instanceof Map<?, ?> raw)) {
+                        continue;
+                    }
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> entry = (Map<String, Object>) raw;
+                    mapWorkspaceRootPage(entry).ifPresent(pages::add);
+                }
+            }
+
+            cursor = Boolean.TRUE.equals(responseBody.get("has_more"))
+                    ? asString(responseBody.get("next_cursor"))
+                    : null;
+        } while (cursor != null && !cursor.isBlank());
+
+        return pages;
     }
 
-    private java.util.Optional<String> searchFirstAccessiblePageId(String accessToken) {
-        Map<String, Object> body = new HashMap<>();
-        body.put("filter", Map.of("value", "page", "property", "object"));
-        body.put("page_size", 20);
-
-        HttpEntity<Map<String, Object>> request = new HttpEntity<>(body, notionHeaders(accessToken));
-        ResponseEntity<Map> response = restTemplate.exchange(
-                NOTION_SEARCH_URL,
-                HttpMethod.POST,
-                request,
-                Map.class
-        );
-
-        if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+    private java.util.Optional<NotionCalendarTargetResponse> mapWorkspaceRootPage(Map<String, Object> entry) {
+        if (!"page".equals(asString(entry.get("object"))) || Boolean.TRUE.equals(entry.get("archived"))) {
             return java.util.Optional.empty();
         }
-
-        Object resultsObj = response.getBody().get("results");
-        if (!(resultsObj instanceof List<?> results)) {
+        if (!isWorkspaceRootPage(entry) || isDatabaseChildPage(entry)) {
             return java.util.Optional.empty();
         }
+        String id = asString(entry.get("id"));
+        if (id == null || id.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        String name = extractPageTitle(entry);
+        if (name.isBlank()) {
+            name = "이름 없는 페이지";
+        }
+        return java.util.Optional.of(new NotionCalendarTargetResponse(id, name, "page", asString(entry.get("url"))));
+    }
 
-        for (Object item : results) {
-            if (!(item instanceof Map<?, ?> raw)) {
-                continue;
+    private boolean isWorkspaceRootPage(Map<String, Object> entry) {
+        Object parentObj = entry.get("parent");
+        if (!(parentObj instanceof Map<?, ?> parent)) {
+            return false;
+        }
+        return "workspace".equals(asString(parent.get("type")));
+    }
+
+    private boolean isDatabaseChildPage(Map<String, Object> entry) {
+        Object parentObj = entry.get("parent");
+        if (!(parentObj instanceof Map<?, ?> parent)) {
+            return false;
+        }
+        return "database_id".equals(asString(parent.get("type")));
+    }
+
+    private String extractPageTitle(Map<String, Object> entry) {
+        Object propsObj = entry.get("properties");
+        if (!(propsObj instanceof Map<?, ?> props)) {
+            return "";
+        }
+        for (Object value : props.values()) {
+            if (value instanceof Map<?, ?> prop && "title".equals(asString(prop.get("type")))) {
+                String title = extractTitle(prop.get("title"));
+                if (!title.isBlank()) {
+                    return title;
+                }
             }
-            @SuppressWarnings("unchecked")
-            Map<String, Object> entry = (Map<String, Object>) raw;
-            if (!"page".equals(asString(entry.get("object"))) || Boolean.TRUE.equals(entry.get("archived"))) {
-                continue;
+        }
+        return "";
+    }
+
+    public java.util.Optional<String> fetchDatabaseParentPageId(String accessToken, String databaseId) {
+        if (!StringUtils.hasText(databaseId)) {
+            return java.util.Optional.empty();
+        }
+        try {
+            HttpEntity<Void> request = new HttpEntity<>(notionHeaders(accessToken));
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_DATABASES_URL + databaseId.trim(),
+                    HttpMethod.GET,
+                    request,
+                    Map.class
+            );
+            if (!response.getStatusCode().is2xxSuccessful() || response.getBody() == null) {
+                return java.util.Optional.empty();
             }
-            String id = asString(entry.get("id"));
-            if (id != null && !id.isBlank()) {
-                return java.util.Optional.of(id);
+            Object parentObj = response.getBody().get("parent");
+            if (!(parentObj instanceof Map<?, ?> parent)) {
+                return java.util.Optional.empty();
             }
+            if ("page_id".equals(asString(parent.get("type")))) {
+                String pageId = asString(parent.get("page_id"));
+                if (StringUtils.hasText(pageId)) {
+                    return java.util.Optional.of(pageId.trim());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch Notion database parent for id={}: {}", databaseId, e.getMessage());
         }
         return java.util.Optional.empty();
     }
@@ -528,6 +707,34 @@ public class NotionCalendarService {
             }
         } catch (Exception e) {
             log.warn("Failed to fetch Notion database name for id={}: {}", databaseId, e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * root page ID 로 Notion page 제목 조회 (status 화면용).
+     * 실패 시 null 반환.
+     */
+    public String fetchPageName(String accessToken, String pageId) {
+        if (!StringUtils.hasText(pageId)) {
+            return null;
+        }
+        try {
+            HttpEntity<Void> request = new HttpEntity<>(notionHeaders(accessToken));
+            ResponseEntity<Map> response = restTemplate.exchange(
+                    NOTION_PAGES_RETRIEVE_URL + pageId.trim(),
+                    HttpMethod.GET,
+                    request,
+                    Map.class
+            );
+            if (response.getStatusCode().is2xxSuccessful() && response.getBody() != null) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = response.getBody();
+                String name = extractPageTitle(body);
+                return name.isBlank() ? null : name;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to fetch Notion page name for id={}: {}", pageId, e.getMessage());
         }
         return null;
     }
